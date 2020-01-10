@@ -1,0 +1,20 @@
+746903 - "error on subcontainer 'ia_addr' insert (-1)" on the system with multiple network devices having the same broadcast addr and with 'proxy' option in snmpd.conf
+
+Don't start stderr logging when parsing command line. It will be enbaled
+on request by snmp_log_string() when logging is really needed.
+
+Inspired by upstream commit 54aa0d41aa0c88ce0a99bc292bc3cab76e7d5a48
+
+diff -up net-snmp-5.5/snmplib/snmp_parse_args.c.orig net-snmp-5.5/snmplib/snmp_parse_args.c
+--- net-snmp-5.5/snmplib/snmp_parse_args.c.orig	2012-02-06 12:48:54.285025509 +0100
++++ net-snmp-5.5/snmplib/snmp_parse_args.c	2012-02-06 13:02:24.462531914 +0100
+@@ -612,9 +612,6 @@ snmp_parse_args(int argc,
+     }
+     DEBUGMSGTL(("snmp_parse_args", "finished: %d/%d\n", optind, argc));
+     
+-    if (!logopt)
+-	snmp_enable_stderrlog();
+-
+     /*
+      * read in MIB database and initialize the snmp library
+      */

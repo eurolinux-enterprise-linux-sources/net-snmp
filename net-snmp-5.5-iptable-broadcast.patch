@@ -1,0 +1,21 @@
+1012430 - incorrect pointer tested on NULL, *entry pointer not cleaned up 
+
+commit 38fd6378cc3275180f63b8d9b9a4072b3dabf8e4
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jan 12 14:25:06 2012 +0100
+
+    Fixed a typo.
+
+diff --git a/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c b/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+index ff4f2f2..4457fbd 100644
+--- a/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
++++ b/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+@@ -237,7 +237,7 @@ _netsnmp_ioctl_ipaddress_container_load_v4(netsnmp_container *container,
+         addr_info = netsnmp_access_other_info_get(entry->if_index, AF_INET);
+         if(addr_info.bcastflg) {
+            bcastentry = netsnmp_access_ipaddress_entry_create();
+-           if(NULL == entry) {
++           if(NULL == bcastentry) {
+               rc = -3;
+               break;
+            }

@@ -1,0 +1,379 @@
+1007634 - snmpd returns inconsistent process information with hrSWRunEntry
+
+Source: RHEL 7.0 version of swrun_procfs_status.c
++ set cache lifetime to 5 seconds
++ restore hrSWRunPath of kernel threads
++ restore hrSWRunType of kernel threads back to 'application'
+
+diff -up net-snmp-5.5/agent/mibgroup/host/data_access/swrun.c.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/data_access/swrun.c
+--- net-snmp-5.5/agent/mibgroup/host/data_access/swrun.c.hrSWRunTable-cache	2008-07-30 01:31:38.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/data_access/swrun.c	2014-04-08 10:58:33.759976165 +0200
+@@ -135,7 +135,7 @@ netsnmp_swrun_cache(void)
+     size_t hrSWRunTable_oid_len = OID_LENGTH(hrSWRunTable_oid);
+ 
+     if ( !swrun_cache ) {
+-        swrun_cache = netsnmp_cache_create(30,   /* timeout in seconds */
++        swrun_cache = netsnmp_cache_create(5,   /* timeout in seconds */
+                            _cache_load,  _cache_free,
+                            hrSWRunTable_oid, hrSWRunTable_oid_len);
+         if (swrun_cache)
+diff -up net-snmp-5.5/agent/mibgroup/host/data_access/swrun_procfs_status.c.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/data_access/swrun_procfs_status.c
+--- net-snmp-5.5/agent/mibgroup/host/data_access/swrun_procfs_status.c.hrSWRunTable-cache	2009-06-01 17:37:18.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/data_access/swrun_procfs_status.c	2014-04-08 12:10:16.576227973 +0200
+@@ -30,6 +30,9 @@
+ #include <net-snmp/library/snmp_debug.h>
+ #include <net-snmp/data_access/swrun.h>
+ 
++static long pagesize;
++static long sc_clk_tck;
++
+ /* ---------------------------------------------------------------------
+  */
+ void
+@@ -39,6 +42,8 @@ netsnmp_arch_swrun_init(void)
+     extern int _swrun_max = NR_TASKS;   /* from <linux/tasks.h> */
+ #endif
+     
++    pagesize = getpagesize();
++    sc_clk_tck = sysconf(_SC_CLK_TCK);
+     return;
+ }
+ 
+@@ -50,7 +55,8 @@ netsnmp_arch_swrun_container_load( netsn
+     DIR                 *procdir = NULL;
+     struct dirent       *procentry_p;
+     FILE                *fp;
+-    int                  pid, rc, i;
++    int                  pid, i;
++    unsigned long long   cpu;
+     char                 buf[BUFSIZ], buf2[BUFSIZ], *cp;
+     netsnmp_swrun_entry *entry;
+     
+@@ -71,7 +77,6 @@ netsnmp_arch_swrun_container_load( netsn
+         entry = netsnmp_swrun_entry_create(pid);
+         if (NULL == entry)
+             continue;   /* error already logged by function */
+-        rc = CONTAINER_INSERT(container, entry);
+ 
+         /*
+          * Now extract the interesting information
+@@ -83,8 +88,16 @@ netsnmp_arch_swrun_container_load( netsn
+          */
+         snprintf( buf2, BUFSIZ, "/proc/%d/status", pid );
+         fp = fopen( buf2, "r" );
++        if (!fp) {
++            netsnmp_swrun_entry_free(entry);
++            continue; /* file (process) probably went away */
++	}
+         memset(buf, 0, sizeof(buf));
+-        fgets( buf, BUFSIZ-1, fp );
++        if (fgets( buf, BUFSIZ-1, fp ) == NULL) {
++            fclose(fp);
++            netsnmp_swrun_entry_free(entry);
++            continue;
++        }
+         fclose(fp);
+ 
+         for ( cp = buf; *cp != ':'; cp++ )
+@@ -104,47 +117,56 @@ netsnmp_arch_swrun_container_load( netsn
+          */
+         snprintf( buf2, BUFSIZ, "/proc/%d/cmdline", pid );
+         fp = fopen( buf2, "r" );
++        if (!fp) {
++            netsnmp_swrun_entry_free(entry);
++            continue; /* file (process) probably went away */
++	}
+         memset(buf, 0, sizeof(buf));
+-        cp = fgets( buf, BUFSIZ-1, fp );
++	entry->hrSWRunType = HRSWRUNTYPE_APPLICATION;
++	if ((cp = fgets( buf, sizeof(buf)-1, fp )) == NULL) {
++	    buf[0] = '\0';
++	}
+         fclose(fp);
+ 
+-        if ( cp ) {
+-            /*
+-             *     argv[0]   is hrSWRunPath
+-             */ 
++        /*
++         *     argv[0]   is hrSWRunPath
++         */ 
++        entry->hrSWRunPath_len = snprintf(entry->hrSWRunPath,
++                                   sizeof(entry->hrSWRunPath)-1, "%s", buf);
++        if (entry->hrSWRunPath_len == 0)
+             entry->hrSWRunPath_len = snprintf(entry->hrSWRunPath,
+-                                       sizeof(entry->hrSWRunPath)-1, "%s", buf);
+-            /*
+-             * Stitch together argv[1..] to construct hrSWRunParameters
+-             */
+-            cp = buf + entry->hrSWRunPath_len+1;
+-            while ( 1 ) {
+-                while (*cp)
+-                    cp++;
+-                if ( '\0' == *(cp+1))
+-                    break;      /* '\0''\0' => End of command line */
+-                *cp = ' ';
+-            }
+-            entry->hrSWRunParameters_len = snprintf(entry->hrSWRunParameters,
+-                                             sizeof(entry->hrSWRunParameters)-1,
+-                                             "%s", buf + entry->hrSWRunPath_len+1);
+-        } else {
+-            memcpy(entry->hrSWRunPath, entry->hrSWRunName, entry->hrSWRunName_len);
+-            entry->hrSWRunPath_len       = entry->hrSWRunName_len;
+-            entry->hrSWRunParameters_len = 0;
+-        }
+- 
++                    sizeof(entry->hrSWRunPath)-1, "%s", entry->hrSWRunName);
++
+         /*
+-         * XXX - No information regarding system processes vs applications
++         * Stitch together argv[1..] to construct hrSWRunParameters
+          */
+-        entry->hrSWRunType = HRSWRUNTYPE_APPLICATION;
+-
++        cp = buf + entry->hrSWRunPath_len+1;
++        while ( 1 ) {
++            while (*cp)
++                cp++;
++            if ( '\0' == *(cp+1))
++                break;      /* '\0''\0' => End of command line */
++            *cp = ' ';
++        }
++        entry->hrSWRunParameters_len
++            = sprintf(entry->hrSWRunParameters, "%.*s",
++                      (int)sizeof(entry->hrSWRunParameters) - 1,
++                      buf + entry->hrSWRunPath_len + 1);
++ 
+         /*
+          *   {xxx} {xxx} STATUS  {xxx}*10  UTIME STIME  {xxx}*8 RSS
+          */
+         snprintf( buf, BUFSIZ, "/proc/%d/stat", pid );
+         fp = fopen( buf, "r" );
+-        fgets( buf, BUFSIZ-1, fp );
++        if (!fp) {
++            netsnmp_swrun_entry_free(entry);
++            continue; /* file (process) probably went away */
++	}
++        if (fgets( buf, BUFSIZ-1, fp ) == NULL) {
++            fclose(fp);
++            netsnmp_swrun_entry_free(entry);
++            continue;
++        }
+         fclose(fp);
+ 
+         cp = buf;
+@@ -165,28 +187,29 @@ netsnmp_arch_swrun_container_load( netsn
+         default:   entry->hrSWRunStatus = HRSWRUNSTATUS_INVALID;
+                    break;
+         }
+-        for (i=10; i; i--) {   /* Skip STATUS + 10 fields */
+-            while (' ' != *(cp++))
++        for (i=11; i; i--) {   /* Skip STATUS + 10 fields */
++            while (' ' != *(++cp))
+                 ;
+             cp++;
+         }
+-        entry->hrSWRunPerfCPU  = atoi( cp );   /*  utime */
+-        while ( ' ' != *(cp++))
++        cpu  = atol( cp );                     /*  utime */
++        while ( ' ' != *(++cp))
+             ;
+-        cp++;				   /* Skip utime */
+-        entry->hrSWRunPerfCPU += atoi( cp );   /* +stime */
++        cpu += atol( cp );                     /* +stime */
++        entry->hrSWRunPerfCPU  = cpu * 100 / sc_clk_tck;
+ 
+-        for (i=8; i; i--) {   /* Skip stime + 8 fields */
+-            while (' ' != *(cp++))
++        for (i=9; i; i--) {   /* Skip stime + 8 fields */
++            while (' ' != *(++cp))
+                 ;
+             cp++;
+         }
+-        entry->hrSWRunPerfMem  = atoi( cp );   /*  rss */
+-        entry->hrSWRunPerfMem *= (getpagesize()/1024);  /* in kB */
++        entry->hrSWRunPerfMem  = atol( cp );       /* rss   */
++        entry->hrSWRunPerfMem *= (pagesize/1024);  /* in kB */
++        CONTAINER_INSERT(container, entry);
+     }
+     closedir( procdir );
+ 
+-    DEBUGMSGTL(("swrun:load:arch"," loaded %d entries\n",
++    DEBUGMSGTL(("swrun:load:arch"," loaded %ld entries\n",
+                 CONTAINER_SIZE(container)));
+ 
+     return 0;
+diff -up net-snmp-5.5/agent/mibgroup/host.h.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host.h
+--- net-snmp-5.5/agent/mibgroup/host.h.hrSWRunTable-cache	2014-04-08 10:58:33.477977161 +0200
++++ net-snmp-5.5/agent/mibgroup/host.h	2014-04-08 10:58:33.759976165 +0200
+@@ -26,7 +26,7 @@
+ 	config_require(host/hrh_filesys)
+ 
+ 	config_version_require((host/hr_swinst,  5.6, host/hrSWInstalledTable))
+-	config_version_require((host/hr_swrun,   5.6, host/hrSWRunTable))
++	config_version_require((host/hr_swrun,   5.5, host/hrSWRunTable))
+ 
+ /* add the host resources mib to the default mibs to load */
+ config_add_mib(HOST-RESOURCES-MIB)
+diff -up net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.c.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.c
+--- net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.c.hrSWRunTable-cache	2008-07-29 12:27:48.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.c	2014-04-08 10:58:33.768976133 +0200
+@@ -18,6 +18,7 @@
+ #include <net-snmp/agent/net-snmp-agent-includes.h>
+ #include <net-snmp/data_access/swrun.h>
+ #include "hrSWRunPerfTable.h"
++#include "data_access/swrun.h"
+ 
+ #define MYTABLE "hrSWRunPerfTable"
+ 
+@@ -31,8 +32,15 @@ init_hrSWRunPerfTable(void)
+     initialize_table_hrSWRunPerfTable();
+ }
+ 
++void
++shutdown_hrSWRunPerfTable(void)
++{
++    shutdown_table_hrSWRunPerfTable();
++}
++
+ extern oid      hrSWRunTable_oid[];
+ extern size_t   hrSWRunTable_oid_len;
++static netsnmp_table_registration_info *table_info;
+ 
+ /** Initialize the hrSWRunPerfTable table by defining its contents and how it's structured */
+ void
+@@ -43,8 +51,7 @@ initialize_table_hrSWRunPerfTable(void)
+     size_t          hrSWRunPerfTable_oid_len =
+         OID_LENGTH(hrSWRunPerfTable_oid);
+     netsnmp_handler_registration *reg;
+-    netsnmp_mib_handler *handler;
+-    netsnmp_table_registration_info *table_info;
++    netsnmp_mib_handler *handler = NULL;
+ 
+     reg =
+         netsnmp_create_handler_registration("hrSWRunPerfTable",
+@@ -108,6 +115,7 @@ initialize_table_hrSWRunPerfTable(void)
+     if (SNMPERR_SUCCESS != netsnmp_register_table(reg, table_info)) {
+         snmp_log(LOG_ERR,"error registering table handler for "
+                  MYTABLE "\n");
++        reg = NULL; /* it was freed inside netsnmp_register_table */
+         goto bail;
+     }
+ 
+@@ -126,6 +134,15 @@ initialize_table_hrSWRunPerfTable(void)
+         netsnmp_handler_registration_free(reg);
+ }
+ 
++void
++shutdown_table_hrSWRunPerfTable(void)
++{
++    if (table_info) {
++	netsnmp_table_registration_info_free(table_info);
++	table_info = NULL;
++    }
++}
++
+ /** handles requests for the hrSWRunPerfTable table */
+ int
+ hrSWRunPerfTable_handler(netsnmp_mib_handler *handler,
+diff -up net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.h.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.h
+--- net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.h.hrSWRunTable-cache	2007-09-13 19:29:43.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hrSWRunPerfTable.h	2014-04-08 10:58:33.768976133 +0200
+@@ -21,7 +21,9 @@ config_require(host/hrSWRunTable)
+  * function declarations 
+  */
+ void            init_hrSWRunPerfTable(void);
++void            shutdown_hrSWRunPerfTable(void);
+ void            initialize_table_hrSWRunPerfTable(void);
++void            shutdown_table_hrSWRunPerfTable(void);
+ Netsnmp_Node_Handler hrSWRunPerfTable_handler;
+ 
+ /*
+diff -up net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.c.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.c
+--- net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.c.hrSWRunTable-cache	2008-07-29 12:27:48.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.c	2014-04-08 10:58:33.759976165 +0200
+@@ -19,12 +19,15 @@
+ #include <net-snmp/agent/table_container.h>
+ #include <net-snmp/data_access/swrun.h>
+ #include <net-snmp/agent/cache_handler.h>
++#include "data_access/swrun.h"
+ #include "hrSWRunTable.h"
+ 
+ #include <signal.h>
+ 
+ #define MYTABLE "hrSWRunTable"
+ 
++static netsnmp_table_registration_info *table_info;
++
+ /** Initializes the hrSWRunTable module */
+ void
+ init_hrSWRunTable(void)
+@@ -35,6 +38,15 @@ init_hrSWRunTable(void)
+     initialize_table_hrSWRunTable();
+ }
+ 
++void
++shutdown_hrSWRunTable(void)
++{
++    if (table_info) {
++	netsnmp_table_registration_info_free(table_info);
++	table_info = NULL;
++    }
++}
++
+ oid      hrSWRunTable_oid[] = { 1, 3, 6, 1, 2, 1, 25, 4, 2 };
+ size_t   hrSWRunTable_oid_len = OID_LENGTH(hrSWRunTable_oid);
+ 
+@@ -44,13 +56,15 @@ initialize_table_hrSWRunTable(void)
+ {
+     netsnmp_handler_registration *reg;
+     netsnmp_mib_handler *handler = NULL;
+-    netsnmp_table_registration_info *table_info = NULL;
+-
++#ifndef NETSNMP_NO_WRITE_SUPPORT
+ #ifdef NETSNMP_INCLUDE_HRSWRUN_WRITE_SUPPORT
+ #  define SWRUN_ACCESS_LEVEL HANDLER_CAN_RWRITE
+ #else
+ #  define SWRUN_ACCESS_LEVEL HANDLER_CAN_RONLY
+ #endif
++#else /* !NETSNMP_NO_WRITE_SUPPORT */ 
++#  define SWRUN_ACCESS_LEVEL HANDLER_CAN_RONLY
++#endif /* !NETSNMP_NO_WRITE_SUPPORT */
+     reg =
+         netsnmp_create_handler_registration(MYTABLE,
+                                             hrSWRunTable_handler,
+@@ -114,6 +128,7 @@ initialize_table_hrSWRunTable(void)
+     if (SNMPERR_SUCCESS != netsnmp_register_table(reg, table_info)) {
+         snmp_log(LOG_ERR,"error registering table handler for "
+                  MYTABLE "\n");
++        reg = NULL; /* it was freed inside netsnmp_register_table */
+         goto bail;
+     }
+ 
+@@ -215,6 +230,7 @@ hrSWRunTable_handler(netsnmp_mib_handler
+         }
+         break;
+ 
++#ifndef NETSNMP_NO_WRITE_SUPPORT
+ #ifdef NETSNMP_INCLUDE_HRSWRUN_WRITE_SUPPORT
+         /*
+          * Write-support
+@@ -327,6 +343,7 @@ hrSWRunTable_handler(netsnmp_mib_handler
+         }
+         break;
+ #endif /* NETSNMP_INCLUDE_HRSWRUN_WRITE_SUPPORT */
++#endif /* !NETSNMP_NO_WRITE_SUPPORT */
+     }
+     return SNMP_ERR_NOERROR;
+ }
+diff -up net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.h.hrSWRunTable-cache net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.h
+--- net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.h.hrSWRunTable-cache	2008-07-25 16:19:27.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hrSWRunTable.h	2014-04-08 10:58:33.760976162 +0200
+@@ -22,6 +22,7 @@ config_require(host/hrSWRunPerfTable)
+  * function declarations 
+  */
+ void            init_hrSWRunTable(void);
++void            shutdown_hrSWRunTable(void);
+ void            initialize_table_hrSWRunTable(void);
+ Netsnmp_Node_Handler hrSWRunTable_handler;
+ 

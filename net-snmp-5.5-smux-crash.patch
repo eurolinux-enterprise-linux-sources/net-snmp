@@ -1,0 +1,24 @@
+672595 - Segfault when starting snmpd
+
+commit 276d6a7fe2e1e5d7e4ddb27867c4cedf42d63113
+Author: dts12 <dts12@06827809-a52a-0410-b366-d66718629ded>
+Date:   Thu Dec 10 15:52:45 2009 +0000
+
+    CHANGES: agent: PATCHES: 2911970: Properly terminate linked list of  registrations.
+    Patch provided by Mirko Deckert.
+    
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@17904 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/agent/mibgroup/smux/smux.c b/net-snmp/agent/mibgroup/smux/smux.c
+index c315880..465f100 100644
+--- a/net-snmp/agent/mibgroup/smux/smux.c
++++ b/net-snmp/agent/mibgroup/smux/smux.c
+@@ -1311,6 +1311,7 @@ smux_list_add(smux_reg ** head, smux_reg * add)
+      */
+     if ( prev ) { prev->sr_next = add; }
+     else        {         *head = add; }
++    add->sr_next = NULL;
+     return 0;
+ }
+ 

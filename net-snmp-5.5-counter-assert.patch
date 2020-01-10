@@ -1,0 +1,24 @@
+1065210 - [FJ6.5 Bug]: snmpd reports unnecessary error message "1 == new_val->high failed"
+
+commit 333aea41eb8bcdb9afae6bb89f3581f8e70ee830
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jan 22 12:03:39 2015 +0100
+
+    Fixed "netsnmp_assert 1 == new_val->high failed" appearing in system log.
+    
+    This information is completelly useless to system admin and only confuses users.
+
+diff --git a/snmplib/int64.c b/snmplib/int64.c
+index 51f1f32..af517c1 100644
+--- a/snmplib/int64.c
++++ b/snmplib/int64.c
+@@ -367,7 +367,8 @@ netsnmp_c64_check32_and_update(struct counter64 *prev_val, struct counter64 *new
+          * check wrap incremented high, so reset it. (Because having
+          * high set for a 32 bit counter will confuse us in the next update).
+          */
+-        netsnmp_assert(1 == new_val->high);
++        if (1 != new_val->high)
++            DEBUGMSGTL(("c64", "error expanding to 64 bits: new_val->high != 1"));
+         new_val->high = 0;
+     }
+     else if (64 == rc) {

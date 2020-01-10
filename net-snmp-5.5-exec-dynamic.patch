@@ -1,0 +1,37 @@
+commit d4c1549593ce2c2caeb98e5f8abfd7a5ae5a0273
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jun 27 09:35:44 2012 -0400
+
+    CHANGES: snmpd: removed limit of 'exec' and 'sh' entries in snmpd.conf
+    
+    Use dynamic (re)allocation instead.
+
+diff --git a/agent/mibgroup/agent/extend.c b/agent/mibgroup/agent/extend.c
+index 01baaeb..085d762 100644
+--- a/agent/mibgroup/agent/extend.c
++++ b/agent/mibgroup/agent/extend.c
+@@ -485,10 +485,21 @@ extend_parse_config(const char *token, char *cptr)
+             
+     } else if (!strcmp( token, "sh"   ) ||
+                !strcmp( token, "exec" )) {
+-        if ( num_compatability_entries == max_compatability_entries )
++        if ( num_compatability_entries == max_compatability_entries ) {
+             /* XXX - should really use dynamic allocation */
+-            config_perror("No further UCD-compatible entries" );
+-        else
++            netsnmp_old_extend *new_compatability_entries;
++            new_compatability_entries = realloc(compatability_entries,
++                             max_compatability_entries*2*sizeof(netsnmp_old_extend));
++            if (!new_compatability_entries)
++                config_perror("No further UCD-compatible entries" );
++            else {
++                memset(new_compatability_entries+num_compatability_entries, 0,
++                        sizeof(netsnmp_old_extend)*max_compatability_entries);
++                max_compatability_entries *= 2;
++                compatability_entries = new_compatability_entries;
++            }
++        }
++        if (num_compatability_entries != max_compatability_entries)
+             compatability_entries[
+                 num_compatability_entries++ ].exec_entry = extension;
+     }

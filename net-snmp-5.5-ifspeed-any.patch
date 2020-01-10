@@ -1,0 +1,101 @@
+commit d059fb878b1436599953cea5a077499ddcdcbcb5
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Fri Jan 6 17:03:55 2012 +0000
+
+    CHANGES: BUG: 3440752: IF-MIB: Report interface speed correctly for Ethernet interfaces if other than 10 Mbps, 100 Mbps, 1 Gbps, 2.5 Gbps or 10 Gbps. Add support for NICs faster than 65 Gbps.
+
+diff -ur old/agent/mibgroup/if-mib/data_access/interface_linux.c net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface_linux.c
+--- old/agent/mibgroup/if-mib/data_access/interface_linux.c	2013-07-04 12:39:37.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface_linux.c	2013-07-04 12:44:25.178394035 +0200
+@@ -801,40 +801,39 @@
+ netsnmp_linux_interface_get_if_speed(int fd, const char *name,
+             unsigned long long defaultspeed)
+ {
++    int ret;
+     struct ifreq ifr;
+     struct ethtool_cmd edata;
++    uint16_t speed_hi;
++    uint32_t speed;    
+ 
+     memset(&ifr, 0, sizeof(ifr));
+     edata.cmd = ETHTOOL_GSET;
+     edata.speed = 0;
+     
+     strncpy(ifr.ifr_name, name, sizeof(ifr.ifr_name)-1);
++    ifr.ifr_name[sizeof(ifr.ifr_name)-1] = '\0';
+     ifr.ifr_data = (char *) &edata;
+     
+-    if (ioctl(fd, SIOCETHTOOL, &ifr) == -1) {
++    ret = ioctl(fd, SIOCETHTOOL, &ifr);
++    if (ret == -1 || edata.speed == 0) {
+         DEBUGMSGTL(("mibII/interfaces", "ETHTOOL_GSET on %s failed\n",
+                     ifr.ifr_name));
+         return netsnmp_linux_interface_get_if_speed_mii(fd,name,defaultspeed);
+     }
+     
+-    if (edata.speed != SPEED_10 && edata.speed != SPEED_100
+-#ifdef SPEED_10000
+-        && edata.speed != SPEED_10000
++#ifdef HAVE_STRUCT_ETHTOOL_CMD_SPEED_HI
++    speed_hi = edata.speed_hi;
++#else
++    speed_hi = 0;
+ #endif
+-#ifdef SPEED_2500
+-        && edata.speed != SPEED_2500
+-#endif
+-        && edata.speed != SPEED_1000 ) {
+-        DEBUGMSGTL(("mibII/interfaces", "fallback to mii for %s\n",
+-                    ifr.ifr_name));
+-        /* try MII */
+-        return netsnmp_linux_interface_get_if_speed_mii(fd,name,defaultspeed);
+-    }
+-
++    speed = speed_hi << 16 | edata.speed;
++    if (speed == 0xffff || speed == 0xffffffffUL /*SPEED_UNKNOWN*/)
++        speed = defaultspeed;
+     /* return in bps */
+-    DEBUGMSGTL(("mibII/interfaces", "ETHTOOL_GSET on %s speed = %d\n",
+-                ifr.ifr_name, edata.speed));
+-    return edata.speed*1000LL*1000LL;
++    DEBUGMSGTL(("mibII/interfaces", "ETHTOOL_GSET on %s speed = %#x -> %d\n",
++                ifr.ifr_name, speed_hi << 16 | edata.speed, speed));
++    return speed * 1000LL * 1000LL;
+ }
+ #endif
+  
+diff -ur old/configure.d/config_os_struct_members net-snmp-5.5/configure.d/config_os_struct_members
+--- old/configure.d/config_os_struct_members	2009-02-20 05:41:16.000000000 +0100
++++ net-snmp-5.5/configure.d/config_os_struct_members	2013-07-04 12:47:29.800713338 +0200
+@@ -57,6 +57,18 @@
+ #endif
+     ]])
+ 
++#       struct ethtool_cmd
++#
++if test "x$ac_cv_header_linux_ethtool_h" = "xyes" ; then
++AC_CHECK_MEMBERS([struct ethtool_cmd.speed_hi],,,[
++    AC_INCLUDES_DEFAULT()
++    [
++#ifdef HAVE_LINUX_ETHTOOL_H
++#include <linux/ethtool.h>
++#endif
++    ]])
++fi
++
+ #       struct ipstat
+ #   Agent:
+ #
+diff -ur old/include/net-snmp/net-snmp-config.h.in net-snmp-5.5/include/net-snmp/net-snmp-config.h.in
+--- old/include/net-snmp/net-snmp-config.h.in	2009-08-03 21:27:18.000000000 +0200
++++ net-snmp-5.5/include/net-snmp/net-snmp-config.h.in	2013-07-04 12:41:22.253066314 +0200
+@@ -804,6 +804,9 @@
+ /* Define to 1 if `sa_sigaction' is member of `struct sigaction'. */
+ #undef HAVE_STRUCT_SIGACTION_SA_SIGACTION
+ 
++/* Define to 1 if `speed_hi' is member of `struct ethtool_cmd'. */
++#undef HAVE_STRUCT_ETHTOOL_CMD_SPEED_HI
++
+ /* Define to 1 if `sin6_scope_id' is member of `struct sockaddr_in6'. */
+ #undef HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID
+ 

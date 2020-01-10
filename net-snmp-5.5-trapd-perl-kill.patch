@@ -1,0 +1,33 @@
+824402 - snmptrapd core dumps while running within valgrind with perl trap handler
+
+commit d721cf77a2a864bcfc9fa7a41c7bd323eb32e8a4
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Wed Jul 6 21:12:01 2011 +0200
+
+    CHANGES: snmptrapd: Fix a rare crash triggered by SIGTERM by moving shutdown_perl() from the SIGTERM signal handler to the cleanup code section in main().
+
+diff --git a/apps/snmptrapd.c b/apps/snmptrapd.c
+index be4abd2..7742eff 100644
+--- a/apps/snmptrapd.c
++++ b/apps/snmptrapd.c
+@@ -317,10 +317,6 @@ term_handler(int sig)
+ #endif
+     netsnmp_running = 0;
+ 
+-#ifdef NETSNMP_EMBEDDED_PERL
+-    shutdown_perl();
+-#endif
+-
+ #ifdef WIN32SERVICE
+     /*
+      * In case of windows, select() in receive() function will not return 
+@@ -1324,6 +1320,9 @@ main(int argc, char *argv[])
+     }
+     snmp_log(LOG_INFO, "Stopping snmptrapd\n");
+     
++#ifdef NETSNMP_EMBEDDED_PERL
++    shutdown_perl();
++#endif
+     snmptrapd_close_sessions(sess_list);
+     snmp_shutdown("snmptrapd");
+ #ifdef WIN32SERVICE

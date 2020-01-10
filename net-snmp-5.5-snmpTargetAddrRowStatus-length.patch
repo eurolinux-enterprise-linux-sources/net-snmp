@@ -1,0 +1,23 @@
+754275 - Cannot create new rows in snmpTargetAddrTable
+
+commit bf4fe6b5503e523f29445f3c5c2fa1c5cccf1e57
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu May 27 13:52:29 2010 +0000
+
+    CHANGES: snmpd: BUG: 2972579: fixed checking of snmpTargetAddrRowStatus SET requests.
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18888 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/target/snmpTargetAddrEntry.c b/agent/mibgroup/target/snmpTargetAddrEntry.c
+index 088d9b6..de54831 100644
+--- a/agent/mibgroup/target/snmpTargetAddrEntry.c
++++ b/agent/mibgroup/target/snmpTargetAddrEntry.c
+@@ -1497,7 +1497,7 @@ write_snmpTargetAddrRowStatus(int action,
+                         "write to snmpTargetAddrRowStatus not ASN_INTEGER\n"));
+             return SNMP_ERR_WRONGTYPE;
+         }
+-        if (var_val_len != sizeof(int)) {
++        if (var_val_len != sizeof(long)) {
+             DEBUGMSGTL(("snmpTargetAddrEntry",
+                         "write to snmpTargetAddrRowStatus: bad length\n"));
+             return SNMP_ERR_WRONGLENGTH;

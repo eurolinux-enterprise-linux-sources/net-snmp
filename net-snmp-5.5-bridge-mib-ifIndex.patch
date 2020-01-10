@@ -1,0 +1,69 @@
+740172 - snmp-bridge-mib subagent is using wrong datatype for ifindex value
+
+commit 171e8d48d4af04013cff8fd28f5341a2aef21d88
+Author: Mijo Safradin <safradin@linux.vnet.ibm.com>
+Date:   Tue Nov 29 16:49:46 2011 +0100
+
+    CHANGES: snmp-bridge-mib: Fix index interpretation.
+    
+    This patch corrects a wrong data interpretation.
+    snmp-bridge-mib obtains the ifindex value from the sysfs
+    attribute 'ifindex' The value given by the sysfs attribute
+    is an integer, which is handled as hex and leads to
+    incorrect data displayed to the user.
+    
+    e.g.
+        $ > snmpwalk localhost BRIDGE-MIB::dot1dBasePortIfIndex.2
+        BRIDGE-MIB::dot1dBasePortIfIndex.2 = INTEGER: 54
+    
+    according to the sysfs attribute the value is 36
+    
+        $ > cat /sys/class/net/<device>/ifindex
+        36
+    
+    Signed-off-by: Mijo Safradin <safradin@linux.vnet.ibm.com>
+
+diff --git a/local/snmp-bridge-mib b/local/snmp-bridge-mib
+index a4c2c80..4a9415e 100644
+--- a/local/snmp-bridge-mib
++++ b/local/snmp-bridge-mib
+@@ -1004,7 +1004,7 @@ sub readindexes()
+ 		next if  $if eq "..";
+ 
+ 		my $port=hex(readfile($brifdir.$if."/port_no", 0));
+-		my $index=readfile($netdir.$if."/ifindex", STP_PROP_HEX);
++		my $index=readfile($netdir.$if."/ifindex", 0);
+ 
+ 		$indexes{$bridge}{$port}=$index;
+ 		$interfaces{$bridge}{$port}=$if;
+@@ -1063,17 +1063,16 @@ sub tracevlan{
+ 			my $pif=$1;
+ 			$brifdir=$netdir.$pif."/brport/bridge/brif/";
+ 			$port=hex(readfile($brifdir.$pif."/port_no", 0));
+-			$index=readfile($netdir.$pif."/ifindex", STP_PROP_HEX);
++			$index=readfile($netdir.$pif."/ifindex", 0);
+ 			#$indexes{$bridge}{$port}=$index;
+ 			#$interfaces{$bridge}{$port}=$if;
+ 			$tagged{$vlan}{$port}=1;
+ 		}else{
+-			my $brid=readfile($netdir.$if."/brport/bridge/ifindex",
+-						STP_PROP_HEX);
++			my $brid=readfile($netdir.$if."/brport/bridge/ifindex",	0);
+ 			$brifdir=$netdir.$if."/brport/bridge/brif/";
+ 			$port=hex(readfile($brifdir.$if."/port_no", 0));
+ 			$port=$brid*1000+$port; #create a unique port number
+-			$index=readfile($netdir.$if."/ifindex", STP_PROP_HEX);
++			$index=readfile($netdir.$if."/ifindex", 0);
+ 			$indexes{$bridge}{$port}=$index;
+ 			$interfaces{$bridge}{$port}=$if;
+ 			$tagged{$vlan}{$port}=0;
+@@ -1083,8 +1082,7 @@ sub tracevlan{
+ 	}
+ 	close(DIR);
+ 
+-	my $brid=readfile($netdir.$interface."/brport/bridge/ifindex",
+-					 STP_PROP_HEX);
++	my $brid=readfile($netdir.$interface."/brport/bridge/ifindex", 0);
+ 	my $fdb=$netdir.$interface."/brport/bridge/brforward";
+ 
+ 	my $vbridge=$bridge."_vlan".$vlan;

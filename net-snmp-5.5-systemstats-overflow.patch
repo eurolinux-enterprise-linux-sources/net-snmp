@@ -1,0 +1,229 @@
+681949 - net-snmp logs "truncating integer value > 32 bits" for ssIORawSent and ssIORawReceived
+
+commit c82102d9e2a62db4628b2c5dd9ffb6d7077f02c5
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Fri Mar 4 15:09:26 2011 +0000
+
+    CHANGES: snmpd: fixed 'truncating integer value > 32 bits' in UCD-SNMP-MIB::systemStats on Linux
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-5-patches@20061 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/ucd-snmp/vmstat_linux.c b/agent/mibgroup/ucd-snmp/vmstat_linux.c
+index d7902a1..7538a14 100644
+--- a/agent/mibgroup/ucd-snmp/vmstat_linux.c
++++ b/agent/mibgroup/ucd-snmp/vmstat_linux.c
+@@ -117,6 +117,8 @@ static int has_vmstat = 1;
+ static int has_cpu_26 = 1;
+ static time_t cache_time;
+ #define CACHE_TIMEOUT	5
++#define MAX_INT32 0x7fffffff
++#define MAX_COUNTER 0xffffffff
+ 
+ #define STAT_FILE	"/proc/stat"
+ #define VMSTAT_FILE	"/proc/vmstat"
+@@ -487,76 +489,76 @@ var_extensible_vmstat(struct variable *vp,
+         *var_len = strlen(errmsg);
+         return ((u_char *) (errmsg));
+     case SWAPIN:
+-        long_ret = vmstat(swapin);
++        long_ret = vmstat(swapin) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case SWAPOUT:
+-        long_ret = vmstat(swapout);
++        long_ret = vmstat(swapout) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case RAWSWAPIN:
+-        long_ret = vmstat(rawswapin);
++        long_ret = vmstat(rawswapin) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case RAWSWAPOUT:
+-        long_ret = vmstat(rawswapout);
++        long_ret = vmstat(rawswapout) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case IOSENT:
+-        long_ret = vmstat(iosent);
++        long_ret = vmstat(iosent) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case IORECEIVE:
+-        long_ret = vmstat(ioreceive);
++        long_ret = vmstat(ioreceive) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case IORAWSENT:
+-        long_ret = vmstat(rawiosent);
++        long_ret = vmstat(rawiosent) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case IORAWRECEIVE:
+-        long_ret = vmstat(rawioreceive);
++        long_ret = vmstat(rawioreceive) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case SYSINTERRUPTS:
+-        long_ret = vmstat(sysinterrupts);
++        long_ret = vmstat(sysinterrupts) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case SYSCONTEXT:
+-        long_ret = vmstat(syscontext);
++        long_ret = vmstat(syscontext) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case CPUUSER:
+-        long_ret = vmstat(cpuuser);
++        long_ret = vmstat(cpuuser) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case CPUSYSTEM:
+-        long_ret = vmstat(cpusystem);
++        long_ret = vmstat(cpusystem) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case CPUIDLE:
+-        long_ret = vmstat(cpuidle);
++        long_ret = vmstat(cpuidle) & MAX_INT32;
+         return ((u_char *) (&long_ret));
+     case CPURAWUSER:
+-        long_ret = vmstat(cpurawuser);
++        long_ret = vmstat(cpurawuser) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWNICE:
+-        long_ret = vmstat(cpurawnice);
++        long_ret = vmstat(cpurawnice) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWSYSTEM:
+-        long_ret = vmstat(cpurawsystem)+vmstat(cpurawinter)+vmstat(cpurawsoft);
++        long_ret = (vmstat(cpurawsystem)+vmstat(cpurawinter)+vmstat(cpurawsoft)) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWKERNEL:
+-        long_ret = vmstat(cpurawsystem);
++        long_ret = vmstat(cpurawsystem) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWIDLE:
+-        long_ret = vmstat(cpurawidle);
++        long_ret = vmstat(cpurawidle) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case SYSRAWINTERRUPTS:
+-	long_ret = vmstat(rawinterrupts);
++	long_ret = vmstat(rawinterrupts) & MAX_COUNTER;
+ 	return (u_char *)&long_ret;
+     case SYSRAWCONTEXT:
+-	long_ret = vmstat(rawcontext);
++	long_ret = vmstat(rawcontext) & MAX_COUNTER;
+ 	return (u_char *)&long_ret;
+     case CPURAWWAIT:
+ 	if (!has_cpu_26) return NULL;
+-        long_ret = vmstat(cpurawwait);
++        long_ret = vmstat(cpurawwait) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWINTR:
+ 	if (!has_cpu_26) return NULL;
+-        long_ret = vmstat(cpurawinter);
++        long_ret = vmstat(cpurawinter) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+     case CPURAWSOFTIRQ:
+ 	if (!has_cpu_26) return NULL;
+-        long_ret = vmstat(cpurawsoft);
++        long_ret = vmstat(cpurawsoft) & MAX_COUNTER;
+         return ((u_char *) (&long_ret));
+ 		
+         /*
+commit 10cce829ba07b2ea9628ef6cfb734b492be7590c
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Mon Nov 30 16:07:42 2009 +0000
+
+    CHANGES: agent: BUG: 2897000: Suppress 32-bit counter truncation warnings.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-4-patches@17849 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/ucd-snmp/vmstat.c b/agent/mibgroup/ucd-snmp/vmstat.c
+index f0d54f2..f51efea 100644
+--- a/agent/mibgroup/ucd-snmp/vmstat.c
++++ b/agent/mibgroup/ucd-snmp/vmstat.c
+@@ -73,11 +73,11 @@ vmstat_handler(netsnmp_mib_handler          *handler,
+          */
+         case CPURAWUSER:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->user_ticks );
++                                        info->user_ticks & 0xffffffff);
+              break;
+         case CPURAWNICE:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->nice_ticks );
++                                        info->nice_ticks & 0xffffffff);
+              break;
+         case CPURAWSYSTEM:
+              /*
+@@ -88,29 +88,29 @@ vmstat_handler(netsnmp_mib_handler          *handler,
+               *   if it has a non-zero value.
+               */
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->sys2_ticks ?
++                                       (info->sys2_ticks ?
+                                         info->sys2_ticks :
+-                                        info->sys_ticks );
++                                        info->sys_ticks ) & 0xffffffff);
+              break;
+         case CPURAWIDLE:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->idle_ticks );
++                                        info->idle_ticks & 0xffffffff);
+              break;
+         case CPURAWWAIT:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->wait_ticks );
++                                        info->wait_ticks & 0xffffffff);
+              break;
+         case CPURAWKERNEL:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->kern_ticks );
++                                        info->kern_ticks & 0xffffffff);
+              break;
+         case CPURAWINTR:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->intrpt_ticks );
++                                        info->intrpt_ticks & 0xffffffff);
+              break;
+         case CPURAWSOFTIRQ:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->sirq_ticks );
++                                        info->sirq_ticks & 0xffffffff);
+              break;
+ 
+         /*
+@@ -158,11 +158,11 @@ vmstat_handler(netsnmp_mib_handler          *handler,
+          */
+         case SYSRAWINTERRUPTS:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->nInterrupts );
++                                        info->nInterrupts & 0xffffffff);
+              break;
+         case SYSRAWCONTEXT:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->nCtxSwitches );
++                                        info->nCtxSwitches & 0xffffffff);
+              break;
+         case SYSINTERRUPTS:
+              if ( info->history && info->history[0].total_hist ) {
+@@ -184,11 +184,11 @@ vmstat_handler(netsnmp_mib_handler          *handler,
+          */
+         case RAWSWAPIN:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->swapIn );
++                                        info->swapIn & 0xffffffff);
+              break;
+         case RAWSWAPOUT:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->swapOut );
++                                        info->swapOut & 0xffffffff);
+              break;
+         case SWAPIN:
+              if ( info->history && info->history[0].total_hist ) {
+@@ -212,11 +212,11 @@ vmstat_handler(netsnmp_mib_handler          *handler,
+          */
+         case IORAWSENT:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->pageOut );
++                                        info->pageOut & 0xffffffff);
+              break;
+         case IORAWRECEIVE:
+              snmp_set_var_typed_integer(requests->requestvb, ASN_COUNTER,
+-                                        info->pageIn );
++                                        info->pageIn & 0xffffffff);
+              break;
+         case IOSENT:
+              if ( info->history && info->history[0].total_hist ) {

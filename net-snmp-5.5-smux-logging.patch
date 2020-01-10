@@ -1,0 +1,87 @@
+Bug 1140234 - unexpected messages in log while smux processing
+
+Backported from:
+
+commit 75d17a242e524e66b6c8214f68dc9920d5bd59df
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Fri Jan 30 11:29:53 2015 +0100
+
+    CHANGES: snmpd: Remove some log messages from SMUX processing.
+    
+    These messages are not useful to system admin and only makes system log unreadable. Let's move them to debug level.
+
+diff -up net-snmp-5.5/agent/mibgroup/smux/smux.c.log net-snmp-5.5/agent/mibgroup/smux/smux.c
+--- net-snmp-5.5/agent/mibgroup/smux/smux.c.log	2015-01-30 11:18:57.140843472 +0100
++++ net-snmp-5.5/agent/mibgroup/smux/smux.c	2015-01-30 11:21:50.072018057 +0100
+@@ -535,8 +535,8 @@ var_smux_write_new(int action,
+ 
+             if (buf[0] == SMUX_TRAP) {
+                 DEBUGMSGTL(("smux", "[var_smux_write] Received trap\n"));
+-                snmp_log(LOG_INFO, "Got trap from peer on fd %d\n",
+-                         rptr->sr_fd);
++                DEBUGMSGTL(("smux", "Got trap from peer on fd %d\n",
++                         rptr->sr_fd));
+                 ptr = asn_parse_header(buf, &len, &type);
+                 smux_trap_process(ptr, &len);
+ 
+@@ -673,9 +673,9 @@ smux_accept(int sd)
+         snmp_log_perror("[smux_accept] accept failed");
+         return -1;
+     } else {
+-        snmp_log(LOG_INFO, "[smux_accept] accepted fd %d from %s:%d\n",
++    	DEBUGMSGTL(("smux", "[smux_accept] accepted fd %d from %s:%d\n",
+                  fd, inet_ntoa(in_socket.sin_addr),
+-                 ntohs(in_socket.sin_port));
++                 ntohs(in_socket.sin_port)));
+         if (npeers + 1 == SMUXMAXPEERS) {
+             snmp_log(LOG_ERR,
+                      "[smux_accept] denied peer on fd %d, limit %d reached",
+@@ -774,7 +774,8 @@ smux_process(int fd)
+ 
+     if (length <= 0)
+     {
+-       snmp_log_perror("[smux_process] peek failed");
++       if (length < 0)
++    	   snmp_log_perror("[smux_process] peek failed");
+        smux_peer_cleanup(fd);
+        return -1;
+     }
+@@ -864,7 +865,7 @@ smux_pdu_process(int fd, u_char * data,
+             DEBUGMSGTL(("smux", "This shouldn't have happened!\n"));
+             break;
+         case SMUX_TRAP:
+-            snmp_log(LOG_INFO, "Got trap from peer on fd %d\n", fd);
++        	DEBUGMSGTL(("smux", "Got trap from peer on fd %d\n", fd));
+             if (ptr)
+             {
+                DEBUGMSGTL(("smux", "[smux_pdu_process] call smux_trap_process.\n"));
+@@ -970,9 +971,9 @@ smux_open_process(int fd, u_char * ptr,
+         *fail = TRUE;
+         return ptr;
+     }
+-    snmp_log(LOG_INFO,
++    DEBUGMSGTL(("smux",
+              "accepted smux peer: oid %s, descr %s\n",
+-             oid_print, descr);
++             oid_print, descr));
+     *fail = FALSE;
+     return ptr;
+ }
+@@ -1567,7 +1568,7 @@ smux_snmp_process(int exact,
+ 
+         if (result[0] == SMUX_TRAP) {
+             DEBUGMSGTL(("smux", "[smux_snmp_process] Received trap\n"));
+-            snmp_log(LOG_INFO, "Got trap from peer on fd %d\n", sd);
++            DEBUGMSGTL(("smux", "Got trap from peer on fd %d\n", sd));
+             ptr = asn_parse_header(result, &length, &type);
+             smux_trap_process(ptr, &length);
+ 
+@@ -1935,7 +1936,7 @@ smux_peer_cleanup(int sd)
+             Auths[i]->sa_active_fd = -1;
+             snprint_objid(oid_name, sizeof(oid_name), Auths[i]->sa_oid,
+                           Auths[i]->sa_oid_len);
+-            snmp_log(LOG_INFO, "peer disconnected: %s\n", oid_name);
++            DEBUGMSGTL(("smux", "peer disconnected: %s\n", oid_name));
+         }
+     }
+ }

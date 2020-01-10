@@ -1,0 +1,243 @@
+diff -up net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c.tcp net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c
+--- net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c.tcp	2009-04-23 08:41:55.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c	2012-02-13 10:19:03.457147197 +0100
+@@ -83,6 +83,9 @@ netsnmp_arch_tcpconn_container_load(nets
+     DEBUGMSGTL(("access:tcpconn:container",
+                 "tcpconn_container_arch_load (flags %x)\n", load_flags));
+ 
++    /* Setup the pid_from_inode table, and fill it.*/
++    netsnmp_get_pid_from_inode_init();
++
+     if (NULL == container) {
+         snmp_log(LOG_ERR, "no container specified/found for access_tcpconn\n");
+         return -1;
+@@ -182,7 +185,7 @@ _load4(netsnmp_container *container, u_i
+         entry->rmt_port = (unsigned short) remote_port;
+         entry->tcpConnState = state;
+         entry->pid = netsnmp_get_pid_from_inode(inode);
+-        
++
+         /** the addr string may need work */
+         buf_len = strlen(local_addr);
+         if ((8 != buf_len) ||
+diff -up net-snmp-5.5/agent/mibgroup/udp-mib/data_access/udp_endpoint_linux.c.tcp net-snmp-5.5/agent/mibgroup/udp-mib/data_access/udp_endpoint_linux.c
+--- net-snmp-5.5/agent/mibgroup/udp-mib/data_access/udp_endpoint_linux.c.tcp	2009-08-05 22:07:38.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/udp-mib/data_access/udp_endpoint_linux.c	2012-02-13 10:19:03.457147197 +0100
+@@ -84,6 +84,9 @@ netsnmp_arch_udp_endpoint_container_load
+ {
+     int rc = 0;
+ 
++    /* Setup the pid_from_inode table, and fill it.*/
++    netsnmp_get_pid_from_inode_init();
++
+     rc = _load4(container, load_flags);
+     if(rc < 0) {
+         u_int flags = NETSNMP_ACCESS_UDP_ENDPOINT_FREE_KEEP_CONTAINER;
+diff -up net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.c.tcp net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.c
+--- net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.c.tcp	2012-02-13 10:15:56.465177165 +0100
++++ net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.c	2012-02-13 10:15:40.000000000 +0100
+@@ -22,24 +22,106 @@
+ # define SOCKET_TYPE_1      "socket:["
+ # define SOCKET_TYPE_2      "[0000]:"
+ 
+-pid_t
+-netsnmp_get_pid_from_inode(ino64_t inode)
++/* Definition of a simple open addressing hash table.*/
++/* When inode == 0 then the entry is empty.*/
++typedef struct {
++    ino64_t inode;
++    pid_t   pid;
++} inode_pid_ent_t;
++
++#define INODE_PID_TABLE_MAX_COLLISIONS 1000
++#define INODE_PID_TABLE_LENGTH 20000
++#define INODE_PID_TABLE_SIZE (INODE_PID_TABLE_LENGTH * sizeof (inode_pid_ent_t))
++static inode_pid_ent_t  inode_pid_table[INODE_PID_TABLE_LENGTH];
++
++static uint32_t
++_hash(uint64_t key)
++{
++    key = (~key) + (key << 18);
++    key = key ^ (key >> 31);
++    key = key * 21;
++    key = key ^ (key >> 11);
++    key = key + (key << 6);
++    key = key ^ (key >> 22);
++    return key;
++}
++
++static void
++_clear(void)
++{
++    /* Clear the inode/pid hash table.*/
++    memset(inode_pid_table, 0, INODE_PID_TABLE_SIZE);
++}
++
++static void
++_set(ino64_t inode, pid_t pid)
++{
++    uint32_t        hash = _hash(inode);
++    uint32_t        i;
++    inode_pid_ent_t *entry;
++
++    /* We will try for a maximum number of collisions.*/
++    for (i = 0; i < INODE_PID_TABLE_MAX_COLLISIONS; i++) {
++        entry = &inode_pid_table[(hash + i) % INODE_PID_TABLE_LENGTH];
++
++        /* Check if this entry is empty, or the actual inode we were looking for.*/
++        /* The second part should never happen, but it is here for completeness.*/
++        if (entry->inode == 0 || entry->inode == inode) {
++            entry->inode = inode;
++            entry->pid = pid;
++            return;
++        }
++    }
++
++    /* We will silently fail to insert the inode if we get too many collisions.*/
++    /* the _get function will return a zero pid.*/
++}
++
++static pid_t _get(ino64_t inode)
++{
++    uint32_t        hash = _hash(inode);
++    uint32_t        i;
++    inode_pid_ent_t *entry;
++
++    /* We will try for a maximum number of collisions.*/
++    for (i = 0; i < INODE_PID_TABLE_MAX_COLLISIONS; i++) {
++        entry = &inode_pid_table[(hash + i) % INODE_PID_TABLE_LENGTH];
++
++        /* Check if this entry is empty, or the actual inode we were looking for.*/
++        /* If the entry is empty it means the inode is not in the table and we*/
++        /* should return 0, the entry will also have a zero pid.*/
++        if (entry->inode == 0 || entry->inode == inode) {
++            return entry->pid;
++        }
++    }
++
++    /* We could not find the pid.*/
++    return 0;
++}
++
++void
++netsnmp_get_pid_from_inode_init(void)
+ {
+     DIR            *procdirs = NULL, *piddirs = NULL;
+     char            path_name[PATH_MAX + 1];
+     char            socket_lnk[NAME_MAX + 1];
+-    int             filelen = 0, readlen = 0, iflag = 0;
++    int             filelen = 0, readlen = 0;
+     struct dirent  *procinfo, *pidinfo;
+     pid_t           pid = 0;
+     ino64_t         temp_inode;
+ 
++    _clear();
++
++    /* walk over all directories in /proc*/
+     if (!(procdirs = opendir(PROC_PATH))) {
+-        snmp_log(LOG_ERR, "snmpd: cannot open /proc\n");
+-        return 0;
++        NETSNMP_LOGONCE((LOG_ERR, "snmpd: cannot open /proc\n"));
++        return;
+     }
+ 
+     while ((procinfo = readdir(procdirs)) != NULL) {
+-	const char* name = procinfo->d_name;
++        const char* name = procinfo->d_name;
++
++        /* A pid directory only contains digits, check for those.*/
+         for (; *name; name++) {
+             if (!isdigit(*name))
+                 break;
+@@ -47,16 +129,16 @@ netsnmp_get_pid_from_inode(ino64_t inode
+         if(*name)
+             continue;
+ 
++        /* Create the /proc/<pid>/fd/ path name.*/
+         memset(path_name, '\0', PATH_MAX + 1);
+         filelen = snprintf(path_name, PATH_MAX,
+                            PROC_PATH "/%s/fd/", procinfo->d_name);
+         if (filelen <= 0 || PATH_MAX < filelen)
+             continue;
+ 
+-        pid = strtoul(procinfo->d_name, NULL, 0);
+-
++        /* walk over all the files in /proc/<pid>/fd/*/
+         if (!(piddirs = opendir(path_name)))
+-            continue;
++        continue;
+ 
+         while ((pidinfo = readdir(piddirs)) != NULL) {
+             if (filelen + strlen(pidinfo->d_name) > PATH_MAX)
+@@ -64,28 +146,41 @@ netsnmp_get_pid_from_inode(ino64_t inode
+ 
+             strcpy(path_name + filelen, pidinfo->d_name);
+ 
++            /* The file discriptor is a symbolic link to a socket or a file.*/
++            /* Thus read the symbolic link.*/
+             memset(socket_lnk, '\0', NAME_MAX + 1);
+             readlen = readlink(path_name, socket_lnk, NAME_MAX);
+             if (readlen < 0)
+                 continue;
++
+             socket_lnk[readlen] = '\0';
+ 
++            /* Check if to see if the file descriptor is a socket by comparing*/
++            /* the start to a string. Also extract the inode number from this*/
++            /* symbolic link.*/
+             if (!strncmp(socket_lnk, SOCKET_TYPE_1, 8)) {
+                 temp_inode = strtoull(socket_lnk + 8, NULL, 0);
+             } else if (!strncmp(socket_lnk, SOCKET_TYPE_2, 7)) {
+                 temp_inode = strtoull(socket_lnk + 7, NULL, 0);
+-            } else
+-		temp_inode = 0;
+-            if (inode == temp_inode) {
+-                iflag = 1;
+-                break;
++            } else {
++                temp_inode = 0;
++            }
++
++            /* Add the inode/pid combination to our hash table.*/
++            if (temp_inode != 0) {
++                pid = strtoul(procinfo->d_name, NULL, 0);
++                _set(temp_inode, pid);
+             }
+         }
+         closedir(piddirs);
+-        if (iflag == 1)
+-            break;
+     }
+     if (procdirs)
+         closedir(procdirs);
+-    return pid;
+ }
++
++pid_t
++netsnmp_get_pid_from_inode(ino64_t inode)
++{
++    return _get(inode);
++}
++
+diff -up net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.h.tcp net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.h
+--- net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.h.tcp	2012-02-13 10:16:01.077151714 +0100
++++ net-snmp-5.5/agent/mibgroup/util_funcs/get_pid_from_inode.h	2012-02-13 10:15:40.000000000 +0100
+@@ -28,6 +28,7 @@ config_error(get_pid_from_inode is only
+ 
+ #include <sys/types.h>
+ 
++void netsnmp_get_pid_from_inode_init(void);
+ pid_t netsnmp_get_pid_from_inode(ino64_t);
+ 
+ #endif /* NETSNMP_MIBGROUP_UTIL_FUNCS_HEADER_SIMPLE_TABLE_H */
+diff -up net-snmp-5.3.2.2/agent/mibgroup/sctp-mib/sctpTables_linux.c.tcptime net-snmp-5.3.2.2/agent/mibgroup/sctp-mib/sctpTables_linux.c
+--- net-snmp-5.3.2.2/agent/mibgroup/sctp-mib/sctpTables_linux.c.tcptime	2011-10-06 15:03:11.721590932 +0200
++++ net-snmp-5.3.2.2/agent/mibgroup/sctp-mib/sctpTables_linux.c	2011-10-06 15:03:05.123695794 +0200
+@@ -286,6 +286,7 @@ load_assoc(sctpTables_containers * conta
+                     "arch load failed: can't open" ASSOC_FILE "\n"));
+         return SNMP_ERR_GENERR;
+     }
++    netsnmp_get_pid_from_inode_init();
+ 
+     /*
+      * ignore the header. 

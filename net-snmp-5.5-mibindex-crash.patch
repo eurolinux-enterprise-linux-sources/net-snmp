@@ -1,0 +1,21 @@
+754971 - snmpd segfaults when /var/lib/net-snmp/mib_indexes/0 has wrong selinux permissions in enforcing
+
+commit 299ea9a89c3f1758a7748bb9b3411f62f2c70f88
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jan 4 10:54:55 2012 +0100
+
+    Added check of fopen() return value, just in case of some race.
+
+diff --git a/snmplib/mib.c b/snmplib/mib.c
+index 61509f5..f30fa77 100644
+--- a/snmplib/mib.c
++++ b/snmplib/mib.c
+@@ -2771,6 +2771,8 @@ netsnmp_mibindex_load( void )
+               get_persistent_directory(), i );
+         tmpbuf[sizeof(tmpbuf)-1] = 0;
+         fp = fopen( tmpbuf, "r" );
++        if (!fp)
++            continue;
+         cp = fgets( tmpbuf2, sizeof(tmpbuf2), fp );
+         if ( !cp ) {
+             DEBUGMSGTL(("mibindex", "Empty MIB index (%d)\n", i));

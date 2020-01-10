@@ -1,0 +1,24 @@
+708947 - RHEL6: net-snmp may crash in netsnmp_access_arp_entry_create when system runs out of memory
+
+commit 76f395af7f4b46617d112abdd09fd15108c8de53
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue May 24 12:51:39 2011 +0000
+
+    Added NULL-checks after malloc
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@20446 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/ip-mib/data_access/arp_common.c b/agent/mibgroup/ip-mib/data_access/arp_common.c
+index 4044306..2958719 100644
+--- a/agent/mibgroup/ip-mib/data_access/arp_common.c
++++ b/agent/mibgroup/ip-mib/data_access/arp_common.c
+@@ -21,6 +21,9 @@ netsnmp_access_arp_entry_create(void)
+     netsnmp_arp_entry *entry =
+         SNMP_MALLOC_TYPEDEF(netsnmp_arp_entry);
+ 
++    if (NULL == entry)
++        return NULL;
++
+     entry->oid_index.len = 1;
+     entry->oid_index.oids = &entry->ns_arp_index;
+ 

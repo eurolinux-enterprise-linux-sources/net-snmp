@@ -1,0 +1,42 @@
+748907 - snmpd aborted on reloading configuration with perl module to register a call handler for a given OID
+
+commit ae052472b22720d08369e85127db214245df2e3f
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue Oct 25 16:15:17 2011 +0200
+
+    CHANGES: perl: fixed segmentation fault when handler registration fails.
+    
+    When netsnmp_register_handler fails, it frees its reginfo -> nsahr_DESTROY (and any other function) must not dereference it.
+
+diff --git a/perl/agent/agent.xs b/perl/agent/agent.xs
+index 3b368b4..61307cf 100644
+--- a/perl/agent/agent.xs
++++ b/perl/agent/agent.xs
+@@ -319,13 +319,27 @@ nsahr_register(me)
+         SV *me;
+         PREINIT:
+         netsnmp_handler_registration *reginfo;
++        handler_cb_data *cb_data = NULL;
+         CODE:
+             {
+                 reginfo = (netsnmp_handler_registration *) SvIV(SvRV(me));
++                if (reginfo && reginfo->handler && reginfo->handler->myvoid)
++                    cb_data = (handler_cb_data *) (reginfo->handler->myvoid);
+                 RETVAL = netsnmp_register_handler(reginfo);
+                 if (!RETVAL) {
+                     /* the agent now has a "reference" to this reg pointer */
+                     SvREFCNT_inc(me);
++                } else {
++                    /*
++                     * The reginfo was freed by netsnmp_register_handler,
++                     * don't touch it in nsahr_DESTROY!
++                     */
++                    sv_setiv(SvRV(me), 0);
++                    if (cb_data) {
++                        /* And just free the callback. */
++                        SvREFCNT_dec(cb_data->perl_cb);
++                        free(cb_data);
++                    }
+                 }
+             }
+     OUTPUT:

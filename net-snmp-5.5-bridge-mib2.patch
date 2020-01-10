@@ -1,0 +1,647 @@
+630157 - [6.1 FEAT] Bridge MIBs / 802.1q (vlan) support
+(beware, there are two patches below)
+
+commit d9435e27aed572e80f13cdb9d854e206ecda9c27
+Author: hardaker <hardaker@06827809-a52a-0410-b366-d66718629ded>
+Date:   Tue Jul 27 08:54:15 2010 +0000
+
+    CHANGES: snmpd: patch: 3028923: from jenso: new copy of the bridge-mib perl implementation
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@19251 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/local/snmp-bridge-mib b/net-snmp/local/snmp-bridge-mib
+index 2447867..16ec634 100644
+--- a/net-snmp/local/snmp-bridge-mib
++++ b/net-snmp/local/snmp-bridge-mib
+@@ -43,7 +43,7 @@ sub FDB_STATUS_MGMT { 5 }
+ my %oid_value;
+ my %oid_type;
+ my %oid_next;
+-my (%indexes, %interfaces, %macs, %ages, %locals);
++my (%indexes, %interfaces, %macs, %ages, %locals, %vlans, %tagged);
+ my $oid;
+ 
+ my $subagent=0;
+@@ -127,7 +127,7 @@ sub mode_get{
+ 
+ 	print STDERR "processing get for $oid ($noid).\n";
+ 
+-	reply($request, $oid) if (exists $oid_value{$noid});
++	reply($request, $noid) if (exists $oid_value{$noid});
+ }
+ 
+ sub mode_get_next{
+@@ -155,6 +155,8 @@ sub reply{
+ 	my $type=$oid_type{$oid};
+ 	my $value=$oid_value{$oid};
+ 
++	print STDERR "REPLY: $oid -> $value ($type)\n";
++
+ 	$request->setOID(new NetSNMP::OID($oid));
+ 	$request->setValue($type, $value);
+ }
+@@ -200,6 +202,13 @@ sub populate_mib {
+ 	%oid_value=();
+ 	%oid_type=();
+ 	%oid_next=();
++	%indexes=();
++	%interfaces=();
++	%macs=();
++	%ages=();
++	%locals=();
++	%vlans=();
++	%tagged=();
+ 
+ 	print STDERR "populating MIB for bridge $bridge\n";
+ 
+@@ -212,6 +221,7 @@ sub populate_mib {
+ 
+ 	readindexes($bridge);
+ 	readforwards($bridge);
++	readvlans($bridge);
+ 
+ 	print STDERR "determining baseports.\n";
+ 
+@@ -225,7 +235,7 @@ sub populate_mib {
+ 
+ 	stpportproperties($bridge);
+ 
+-	print STDERR "populating dot1dTp properties\n";
++	print STDERR "populating dot1dTp properties.\n";
+ 
+ 	dot1dTpproperties();
+ 
+@@ -238,6 +248,16 @@ sub populate_mib {
+ 	print STDERR "determining dot1dTpPort properties.\n";
+ 	portproperties($bridge);
+ 
++
++	print STDERR "populating dot1q MIB.\n";
++	dot1qbase($bridge);
++
++	print STDERR "populating dot1q fdb MIB.\n";
++	dot1qfdb($bridge);
++
++	print STDERR "populating current vlans.\n";
++	dot1qcurrentvlans($bridge);
++
+ 	print STDERR "finished populating MIB.\n";
+ 
+ 	return 0;
+@@ -349,8 +369,10 @@ sub createmacs()
+ 		$oid_next{$oid.".3".$prv_mac_oid}=".1.3.6.1.2.1.17.4.4.1.1.1";
+ 	}
+ 
+-	return $start_oid.".1".$first_mac_oid;
++	undef $prv_mac_oid;
++	undef $first_mac_oid;
+ 
++	return $start_oid.".1".$first_mac_oid;
+ }
+ 
+ # TODO: is this sequence complete ?
+@@ -393,6 +415,9 @@ sub createports()
+ 		$oid_next{$oid.".2.".$prv_baseport}=".1.3.6.1.2.1.17.2.1";
+ 	}
+ 
++	undef $prv_baseport;
++	undef $first_baseport;
++
+ }
+ 
+ sub stpproperties()
+@@ -608,6 +633,9 @@ sub stpportproperties
+ 
+ 	$oid = $oid.".11.".$prev_baseport;
+ 
++	undef $prev_baseport;
++	undef $first_baseport;
++
+ }
+ 
+ sub dot1dTpproperties()
+@@ -712,6 +740,239 @@ sub portproperties
+ 
+ 	$oid = $oid.".5.".$prev_baseport;
+ 
++	undef $prev_baseport;
++	undef $first_baseport;
++}
++
++sub dot1qbase()
++{
++	my $bridge = shift;
++
++	my $oid=".1.3.6.1.2.1.17.7.1.1";
++	$oid_next{".1.3.6.1.2.1.17.7"}=$oid.".1";
++	$oid_next{".1.3.6.1.2.1.17.7.1"}=$oid.".1";
++
++	$oid_value{$oid.".1"}=1;
++	$oid_type{$oid.".1"}=ASN_INTEGER;
++	$oid_next{$oid.".1"}=$oid.".2";
++
++	$oid_value{$oid.".2"}=4094;
++	$oid_type{$oid.".2"}=ASN_UNSIGNED;
++	$oid_next{$oid.".2"}=$oid.".3";
++
++	$oid_value{$oid.".3"}=4094;
++	$oid_type{$oid.".3"}=ASN_UNSIGNED;
++	$oid_next{$oid.".3"}=$oid.".4";
++
++	$oid_value{$oid.".4"}=0; # filled in by currentvlans
++	$oid_type{$oid.".4"}=ASN_UNSIGNED;
++	$oid_next{$oid.".4"}=$oid.".5";
++
++	$oid_value{$oid.".5"}=2;
++	$oid_type{$oid.".5"}=ASN_INTEGER;
++	$oid_next{$oid.".5"}=0;  # filled in by dot1qfdb
++
++}
++
++sub dot1qfdb()
++{
++	my $bridge = shift;
++
++	my $oid=".1.3.6.1.2.1.17.7.1.2";
++	foreach my $vlan (sort {$a<=>$b} keys %vlans){
++		unless(defined($first_vlan)){
++			$first_vlan=$vlan;
++			$oid_next{".1.3.6.1.2.1.17.7.1.1.5"}=$oid.".1.1.".$vlan;
++			$oid_next{$oid}=$oid.".1.1.".$vlan;
++			$oid_next{$oid.".1"}=$oid.".1.1.".$vlan;
++			$oid_next{$oid.".1.1"}=$oid.".1.1.".$vlan;
++			$oid_next{$oid.".1.2"}=$oid.".1.2.".$vlan;
++		}
++
++		$oid_value{$oid.".1.1.".$vlan}=$vlan;
++		$oid_type{$oid.".1.1.".$vlan}=ASN_UNSIGNED;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".1.1.".$prv_vlan}=$oid.".1.1.".$vlan;
++		}
++
++		$oid_value{$oid.".1.2.".$vlan}=0; # to be filled later
++		$oid_type{$oid.".1.2.".$vlan}=ASN_COUNTER;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".1.2.".$prv_vlan}=$oid.".1.2.".$vlan;
++		}
++
++		$prv_vlan=$vlan;
++	}
++	if($prv_vlan and $first_vlan){
++		$oid_next{$oid.".1.1.".$prv_vlan}=$oid.".1.2.".$first_vlan;
++		$oid_next{$oid.".1.2.".$prv_vlan}=0; # to be filled later
++	}
++
++	my %macvlan=();
++	my %vlanmac=();
++
++	foreach my $vlan (sort {$a<=>$b} keys %vlans){
++		my $count=0;
++		foreach my $mac (sort {$a cmp $b} keys %macs) {
++			my $vbridge=$bridge."_vlan".$vlan;
++			next unless(defined($macs{$mac}{$vbridge}));
++			$count++;
++			my $mac_oid=mac2oid($mac);
++			$macvlan{$vlan.$mac_oid}=$mac;
++			$vlanmac{$vlan.$mac_oid}=$vlan;
++		}
++		$oid_value{$oid.".1.2.".$vlan}=$count;
++	}
++
++	foreach my $vmac_oid (sort {$a cmp $b} keys %vlanmac){
++		my $mac=$macvlan{$vmac_oid};
++		my $vlan=$vlanmac{$vmac_oid};
++
++		#print "VMAC: $vmac_oid ($vlan:$mac)\n";
++		unless(defined($first_vmac_oid)){
++			$first_vmac_oid=$vmac_oid;
++			$oid_next{$oid.".1.2.".$prv_vlan}=$oid.".2.1.".$vmac_oid;
++			$oid_next{$oid.".2"}=$oid.".2.1.".$vmac_oid;
++			$oid_next{$oid.".2.1"}=$oid.".2.1.".$vmac_oid;
++			$oid_next{$oid.".2.2"}=$oid.".2.2.".$vmac_oid;
++			$oid_next{$oid.".2.3"}=$oid.".2.3.".$vmac_oid;
++		}
++
++		my $port=$macs{$mac}{$bridge};
++		my $baseport=$baseports{$bridge}{$port};
++		my $status=$locals{$mac}{$bridge};
++		my $age=$ages{$mac}{$bridge};
++
++		print "VLAN $vlan: $mac -> $port:$baseport ($status, $age)\n"; 
++
++		$oid_value{$oid.".2.1.".$vmac_oid}=mac2hex($mac);
++		$oid_type{$oid.".2.1.".$vmac_oid}=ASN_OCTET_STR;
++		if(defined($prv_vmac_oid)){
++			$oid_next{$oid.".2.1.".$prv_vmac_oid}=$oid.".2.1.".$vmac_oid;
++		}
++
++		$oid_value{$oid.".2.2.".$vmac_oid}=$baseport;
++		$oid_type{$oid.".2.2.".$vmac_oid}=ASN_INTEGER;
++		if(defined($prv_vmac_oid)){
++			$oid_next{$oid.".2.2.".$prv_vmac_oid}=$oid.".2.2.".$vmac_oid;
++		}
++
++		$oid_value{$oid.".2.3.".$vmac_oid}=$status;
++		$oid_type{$oid.".2.3.".$vmac_oid}=ASN_INTEGER;
++		if(defined($prv_vmac_oid)){
++			$oid_next{$oid.".2.3.".$prv_vmac_oid}=$oid.".2.3.".$vmac_oid;
++		}
++		$prv_vmac_oid=$vmac_oid;
++	}
++
++	if ($prv_vmac_oid and $first_vmac_oid) {
++		$oid_next{$oid.".2.1.".$prv_vmac_oid}=$oid.".2.2.".$first_vmac_oid;
++		$oid_next{$oid.".2.2.".$prv_vmac_oid}=$oid.".2.3.".$first_vmac_oid;
++		$oid_next{$oid.".2.3.".$prv_vmac_oid}=".1.3.6.1.2.1.17.7.1.4.1";
++	}
++
++	undef $first_vmac_oid;
++	undef $prv_vmac_oid;
++
++	undef $first_vlan;
++	undef $prv_vlan;
++}
++
++sub dot1qcurrentvlans()
++{
++	my $bridge = shift;
++
++
++	my $oid=".1.3.6.1.2.1.17.7.1.4.1";
++	$oid_next{".1.3.6.1.2.1.17.7.1.4"}=$oid;
++
++	$oid_value{$oid}=0;	# can't keep track of this info
++	$oid_type{$oid}=ASN_COUNTER;
++
++	my $count=0;
++	$oid=".1.3.6.1.2.1.17.7.1.4.2";
++	foreach my $vlan (sort {$a<=>$b} keys %vlans){
++		$count++;
++		my @allports=();
++		my @untaggedports=();
++		foreach my $port (keys %{$vlans{$vlan}}){
++			$baseport=$baseports{$bridge}{$port};
++			push @allports, $baseport;
++			push @untaggedports, $baseport
++				unless($tagged{$vlan}{$port});
++		}
++		#print "ADDING: vlan $vlan (@allports, @untaggedports)\n";
++		unless(defined($first_vlan)){
++			$first_vlan=$vlan;
++			$oid_next{".1.3.6.1.2.1.17.7.1.4.1"}=$oid.".1.0.".$vlan;
++			$oid_next{$oid}=$oid.".1.0.".$vlan;
++			$oid_next{$oid.".1"}=$oid.".1.0.".$vlan;
++			$oid_next{$oid.".2"}=$oid.".2.0.".$vlan;
++			$oid_next{$oid.".3"}=$oid.".3.0.".$vlan;
++			$oid_next{$oid.".4"}=$oid.".4.0.".$vlan;
++			$oid_next{$oid.".5"}=$oid.".5.0.".$vlan;
++			$oid_next{$oid.".6"}=$oid.".6.0.".$vlan;
++			$oid_next{$oid.".7"}=$oid.".7.0.".$vlan;
++		}
++
++		$oid_value{$oid.".1.0.".$vlan}=0; # can't keep track of this
++		$oid_type{$oid.".1.0.".$vlan}=ASN_TIMETICKS;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".1.0.".$prv_vlan}=$oid.".1.0.".$vlan;
++		}
++
++		$oid_value{$oid.".2.0.".$vlan}=$vlan;
++		$oid_type{$oid.".2.0.".$vlan}=ASN_UNSIGNED;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".2.0.".$prv_vlan}=$oid.".2.0.".$vlan;
++		}
++
++		$oid_value{$oid.".3.0.".$vlan}=$vlan; 
++		$oid_type{$oid.".3.0.".$vlan}=ASN_UNSIGNED;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".3.0.".$prv_vlan}=$oid.".3.0.".$vlan;
++		}
++
++		$oid_value{$oid.".4.0.".$vlan}=getportlist(@allports);
++		$oid_type{$oid.".4.0.".$vlan}=ASN_OCTET_STR;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".4.0.".$prv_vlan}=$oid.".4.0.".$vlan;
++		}
++
++		$oid_value{$oid.".5.0.".$vlan}=getportlist(@untaggedports);
++		$oid_type{$oid.".5.0.".$vlan}=ASN_OCTET_STR;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".5.0.".$prv_vlan}=$oid.".5.0.".$vlan;
++		}
++
++		$oid_value{$oid.".6.0.".$vlan}=1;
++		$oid_type{$oid.".6.0.".$vlan}=ASN_INTEGER;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".6.0.".$prv_vlan}=$oid.".6.0.".$vlan;
++		}
++
++		$oid_value{$oid.".7.0.".$vlan}=0;
++		$oid_type{$oid.".7.0.".$vlan}=ASN_TIMETICKS;
++		if(defined($prv_vlan)){
++			$oid_next{$oid.".7.0.".$prv_vlan}=$oid.".7.0.".$vlan;
++		}
++		$prv_vlan=$vlan;
++	}
++
++	$oid_value{".1.3.6.1.2.1.17.7.1.1.4"}=$count;
++	if($prv_vlan and $first_vlan){
++		$oid_next{$oid.".1.0.".$prv_vlan}=$oid.".2.0.".$first_vlan;
++		$oid_next{$oid.".2.0.".$prv_vlan}=$oid.".3.0.".$first_vlan;
++		$oid_next{$oid.".3.0.".$prv_vlan}=$oid.".4.0.".$first_vlan;
++		$oid_next{$oid.".4.0.".$prv_vlan}=$oid.".5.0.".$first_vlan;
++		$oid_next{$oid.".5.0.".$prv_vlan}=$oid.".6.0.".$first_vlan;
++		$oid_next{$oid.".6.0.".$prv_vlan}=$oid.".7.0.".$first_vlan;
++		$oid_next{$oid.".7.0.".$prv_vlan}=".1.3.6.1.2.1.17.7.1.4.3";
++	}
++
++	undef $prv_vlan;
++	undef $first_vlan;
++
+ }
+ 
+ sub readforwards()
+@@ -762,6 +1023,103 @@ sub readindexes()
+ 	close(DIR);
+ }
+ 
++sub readvlans()
++{
++	my $bridge = shift;
++	my $brifdir = $netdir.$bridge."/brif/";
++	my %ifs;
++
++	opendir(DIR, $brifdir) or return -1;
++	my @interfaces = readdir(DIR);
++	return if ($#interfaces < 2);
++	foreach my $if (@interfaces) {
++		next if $if eq ".";
++		next if  $if eq "..";
++		$ifs{$if}=1;
++	}
++	close(DIR);
++
++	opendir(DIR, $netdir) or return -1;
++	@interfaces = readdir(DIR);
++	return 0 if ($#interfaces < 2);
++	foreach my $if (@interfaces) {
++		next if $if eq ".";
++		next if  $if eq "..";
++		next unless($if=~/^(.*)\.(\d+)$/);
++		my $pif=$1;
++		my $vlan=$2;
++		next unless(defined($ifs{$pif}));
++		tracevlan($vlan, $if, $bridge);
++	}
++	close(DIR);
++}
++
++sub tracevlan{
++	my ($vlan, $interface, $bridge)=@_;
++
++	my $brifdir=$netdir.$interface."/brport/bridge/brif/";
++
++	opendir(DIR, $brifdir) or return -1;
++	my @interfaces = readdir(DIR);
++	return if ($#interfaces < 2);
++	foreach my $if (@interfaces) {
++		next if $if eq ".";
++		next if  $if eq "..";
++		my $port;
++		my $index;
++		if($if=~/^(.*)\.(\d+)$/){
++			my $pif=$1;
++			$brifdir=$netdir.$pif."/brport/bridge/brif/";
++			$port=hex(readfile($brifdir.$pif."/port_no", 0));
++			$index=readfile($netdir.$pif."/ifindex", STP_PROP_HEX);
++			#$indexes{$bridge}{$port}=$index;
++			#$interfaces{$bridge}{$port}=$if;
++			$tagged{$vlan}{$port}=1;
++		}else{
++			my $brid=readfile($netdir.$if."/brport/bridge/ifindex",
++						STP_PROP_HEX);
++			$brifdir=$netdir.$if."/brport/bridge/brif/";
++			$port=hex(readfile($brifdir.$if."/port_no", 0));
++			$port=$brid*1000+$port; #create a unique port number
++			$index=readfile($netdir.$if."/ifindex", STP_PROP_HEX);
++			$indexes{$bridge}{$port}=$index;
++			$interfaces{$bridge}{$port}=$if;
++			$tagged{$vlan}{$port}=0;
++		}
++		$vlans{$vlan}{$port}=1;
++		#print "VLAN: $vlan -> $if ($port <-> $index)\n";
++	}
++	close(DIR);
++
++	my $brid=readfile($netdir.$interface."/brport/bridge/ifindex",
++					 STP_PROP_HEX);
++	my $fdb=$netdir.$interface."/brport/bridge/brforward";
++
++	my $vbridge=$bridge."_vlan".$vlan;
++	open(FWD, $fdb) or return -1;
++	while(sysread(FWD, $data, 20)){
++		my $mac;
++		my ($b1,$b2,$b3,$b4,$b5,$b6,$port,$local,$age,$hi)=
++		unpack("C6 C C L C x3", $data);
++		 $mac=sprintf("%.2x:%.2x:%.2x:%.2x:%.2x:%.2x",
++					$b1,$b2,$b3,$b4,$b5,$b6);
++		 $port=$brid*1000+$port unless(defined($indexes{$bridge}{$port}));  #create a unique port number
++		 $age=$age/100;
++		 #$macs{$mac}{$bridge}=$port;
++		 $macs{$mac}{$vbridge}=$port;
++		 #$ages{$mac}{$bridge}=$age;
++		 $ages{$mac}{$vbridge}=$age;
++		 #$locals{$mac}{$bridge}=FDB_STATUS_LEARNED;
++		 $locals{$mac}{$vbridge}=FDB_STATUS_LEARNED;
++		 next if ($local);
++		 #$macs{$mac}{$bridge}=$bridge;
++		 $macs{$mac}{$vbridge}=$bridge;
++		 #$locals{$mac}{$bridge}=FDB_STATUS_SELF;
++		 $locals{$mac}{$vbridge}=FDB_STATUS_SELF;
++	}
++	close(FWD);
++}
++
+ sub readfile()
+ {
+ 	my $file = shift;
+@@ -779,6 +1137,22 @@ sub readfile()
+ 	return $value;
+ }
+ 
++sub getportlist{
++	my @ports=@_;
++	my $portlist="";
++
++	@ports=sort {$a <=> $b} @ports;
++	my $last=1;
++	foreach my $port (@ports){
++		for(my $i=$last; $i<$port; $i++){
++			$portlist=$portlist."0";
++		}
++		$portlist=$portlist."1";
++		$last=$port+1;
++	}
++	return pack('B*',$portlist); 
++}
++
+ sub mac2oid{
+ 	my ($mac)=@_;
+ 	my @octets=split(/:/,$mac);
+commit 771dd9d297cf66688b0661a70723174679534e7a
+Author: hardaker <hardaker@06827809-a52a-0410-b366-d66718629ded>
+Date:   Tue Jul 27 08:54:30 2010 +0000
+
+    remote debugging/processing stderr output
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@19252 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/local/snmp-bridge-mib b/net-snmp/local/snmp-bridge-mib
+index 16ec634..f6d13e6 100644
+--- a/net-snmp/local/snmp-bridge-mib
++++ b/net-snmp/local/snmp-bridge-mib
+@@ -61,20 +61,15 @@ if ( $#ARGV != 0) {
+ 
+ my $targetbridge = $ARGV[0];
+ 
+-print STDERR "registering at ".$regoid."\n";
+-
+ # are we running embedded ? If not, register as subagent
+ if (!$agent) {
+     $agent = new NetSNMP::agent('Name' => 'dot1qbridge',
+ 				'AgentX' => 1);
+     $subagent = 1;
+-    print STDERR "running as a subagent.\n";
+ }
+ 
+ $agent->register("dot1qbridge", ".1.3.6.1.2.1.17", \&request_handler) or die "registration of handler failed !\n";
+ 
+-print STDERR "dot1qbridge agent started.\n";
+-
+ if ($subagent) {
+ 	# register handler for graceful shutdown
+ 	$SIG{'INT'} = \&shutdown;
+@@ -125,8 +120,6 @@ sub mode_get{
+ 	$SNMP::use_numeric = 1;
+ 	my $noid=SNMP::translateObj($oid);
+ 
+-	print STDERR "processing get for $oid ($noid).\n";
+-
+ 	reply($request, $noid) if (exists $oid_value{$noid});
+ }
+ 
+@@ -136,8 +129,6 @@ sub mode_get_next{
+ 	$SNMP::use_numeric = 1;
+ 	my $noid=SNMP::translateObj($oid);
+ 
+-	print STDERR "processing get_next for $oid ($noid).\n";
+-
+ 	my $nextoid = $oid_next{$noid};
+ 	my $type = $oid_type{$nextoid};
+ 	my $value = $oid_value{$nextoid};
+@@ -155,8 +146,6 @@ sub reply{
+ 	my $type=$oid_type{$oid};
+ 	my $value=$oid_value{$oid};
+ 
+-	print STDERR "REPLY: $oid -> $value ($type)\n";
+-
+ 	$request->setOID(new NetSNMP::OID($oid));
+ 	$request->setValue($type, $value);
+ }
+@@ -210,56 +199,36 @@ sub populate_mib {
+ 	%vlans=();
+ 	%tagged=();
+ 
+-	print STDERR "populating MIB for bridge $bridge\n";
+-
+ 	# first populated oid
+ 	$oid_next{".1.3.6.1.2.1.17"}=".1.3.6.1.2.1.17.1.1";
+ 
+ 	createbaseinfo($bridge);
+ 
+-	print STDERR "identifying interfaces and forward db.\n";
+-
+ 	readindexes($bridge);
+ 	readforwards($bridge);
+ 	readvlans($bridge);
+ 
+-	print STDERR "determining baseports.\n";
+-
+ 	createports($bridge);
+ 
+-	print STDERR "determining dot1dStp properties.\n";
+-
+ 	stpproperties($bridge);
+ 
+-	print STDERR "determining dot1dStpPort properties.\n";
+-
+ 	stpportproperties($bridge);
+ 
+-	print STDERR "populating dot1dTp properties.\n";
+-
+ 	dot1dTpproperties();
+ 
+-	print STDERR "determining MAC addresses.\n";
+-
+ 	my $prevoid = $oid;
+ 	my $curroid = createmacs($bridge);
+ 	$oid_next{$prevoid} = $curroid;
+ 
+-	print STDERR "determining dot1dTpPort properties.\n";
+ 	portproperties($bridge);
+ 
+ 
+-	print STDERR "populating dot1q MIB.\n";
+ 	dot1qbase($bridge);
+ 
+-	print STDERR "populating dot1q fdb MIB.\n";
+ 	dot1qfdb($bridge);
+ 
+-	print STDERR "populating current vlans.\n";
+ 	dot1qcurrentvlans($bridge);
+ 
+-	print STDERR "finished populating MIB.\n";
+-
+ 	return 0;
+ }
+ 
+@@ -273,7 +242,6 @@ sub findbridges()
+ 		next if $br eq ".";
+ 		next if $br eq "..";
+ 		next unless -d $netdir.$br."/bridge";
+-		print STDERR "  ".$br."\n";
+ 		push @bridges, $br;
+ 	}
+ 
+@@ -285,15 +253,12 @@ sub findbridges()
+ sub createbaseinfo()
+ {
+ 	my $bridge = shift;
+-	print STDERR "determining bridge address.\n";
+ 
+ 	$oid=".1.3.6.1.2.1.17.1.1";
+ 	$oid_value{$oid}=mac2hex(readfile($netdir.$bridge."/address", 0));
+ 	$oid_type{$oid}=ASN_OCTET_STR;
+ 	$oid_next{$oid}=".1.3.6.1.2.1.17.1.2";
+ 
+-	print STDERR "determining number of ports.\n";
+-
+ 	opendir(DIR, $netdir.$bridge."/brif/") or die "Could not open ".$netdir.$bridge."brif !\n";
+ 
+ 	foreach $entry (readdir(DIR)) {
+@@ -301,7 +266,6 @@ sub createbaseinfo()
+ 		next if $entry eq "..";
+ 		# only count non-vlan interfaces
+ 		next if $entry =~ /\.[0-9]*/;
+-		print STDERR "  found interface $bridge - $entry\n";
+ 		$ports++;
+ 	}
+ 
+@@ -312,8 +276,6 @@ sub createbaseinfo()
+ 	$oid_type{$oid}=ASN_INTEGER;
+ 	$oid_next{$oid}=".1.3.6.1.2.1.17.1.3";
+ 
+-	print STDERR "determining base type.\n";
+-
+ 	$oid=".1.3.6.1.2.1.17.1.3";
+ 	$oid_value{$oid}="2";	# transparent only
+ 	$oid_type{$oid}=ASN_INTEGER;

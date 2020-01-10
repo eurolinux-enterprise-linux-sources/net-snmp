@@ -1,0 +1,133 @@
+Bug 845155 - [FJ5.8 Bug]: Unnecessary error messages are reported by the snmpd when IPv6 is disabled
+845157 - [FJ6.3 Bug]: Unnecessary error messages are reported by the snmpd when IPv6 is disabled
+
+From upstream commits
+f95df6341b1d06249443e516b59a43cdfa3d4777, 7e67c5038b6aabfda1939ea81d940b24000cfb51, 59b0de0b8fa73eb403006cee75ff8651e1585e28
+
+diff -up net-snmp-5.5/agent/mibgroup/ip-forward-mib/data_access/route_linux.c.msg net-snmp-5.5/agent/mibgroup/ip-forward-mib/data_access/route_linux.c
+--- net-snmp-5.5/agent/mibgroup/ip-forward-mib/data_access/route_linux.c.msg	2008-07-02 14:39:23.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/ip-forward-mib/data_access/route_linux.c	2012-09-14 10:26:14.038395707 +0200
+@@ -205,7 +205,6 @@ _load_ipv6(netsnmp_container* container,
+     char            line[256];
+     netsnmp_route_entry *entry = NULL;
+     char            name[16];
+-    static int      log_open_err = 1;
+ 
+     DEBUGMSGTL(("access:route:container",
+                 "route_container_arch_load ipv6\n"));
+@@ -216,19 +215,10 @@ _load_ipv6(netsnmp_container* container,
+      * fetch routes from the proc file-system:
+      */
+     if (!(in = fopen("/proc/net/ipv6_route", "r"))) {
+-        if (1 == log_open_err) {
+-            snmp_log(LOG_ERR, "cannot open /proc/net/ipv6_route\n");
+-            log_open_err = 0;
+-        }
++        DEBUGMSGTL(("9:access:route:container", "cannot open /proc/net/ipv6_route\n"));
+         return -2;
+     }
+-    /*
+-     * if we turned off logging of open errors, turn it back on now that
+-     * we have been able to open the file.
+-     */
+-    if (0 == log_open_err)
+-        log_open_err = 1;
+-    fgets(line,sizeof(line),in); /* skip header */
++
+     while (fgets(line, sizeof(line), in)) {
+         char            c_name[IFNAMSIZ+1];
+         char            c_dest[33], c_src[33], c_next[33];
+diff -up net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c.msg net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c
+--- net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c.msg	2012-09-14 10:22:29.411157146 +0200
++++ net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c	2012-09-14 10:26:13.999395837 +0200
+@@ -223,7 +223,8 @@ _load_v6(netsnmp_container *container, i
+ #define PROCFILE "/proc/net/if_inet6"
+     if (!(in = fopen(PROCFILE, "r"))) {
+         if (1 == log_open_err) {
+-            snmp_log(LOG_ERR,"could not open " PROCFILE "\n");
++            /* ipv6 is probably disabled */
++            DEBUGMSGTL(("access:ipaddress:container","could not open " PROCFILE "\n"));
+             log_open_err = 0;
+         }
+         return -2;
+diff -up net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipv6scopezone_linux.c.msg net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipv6scopezone_linux.c
+--- net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipv6scopezone_linux.c.msg	2008-08-13 15:02:12.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipv6scopezone_linux.c	2012-09-14 10:26:14.000395834 +0200
+@@ -68,7 +68,8 @@ _scopezone_v6(netsnmp_container* contain
+ #define PROCFILE "/proc/net/if_inet6"
+     if (!(in = fopen(PROCFILE, "r"))) {
+         if (1 == log_open_err) {
+-            snmp_log(LOG_ERR,"could not open " PROCFILE "\n");
++            /* ipv6 is probably disabled */
++            DEBUGMSGTL(("access:scopezone:container","could not open " PROCFILE "\n"));
+             log_open_err = 0;
+         }
+         return -2;
+diff -up net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c.msg net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c
+--- net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c.msg	2012-09-14 10:22:29.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c	2012-09-14 10:27:37.214113744 +0200
+@@ -545,11 +544,7 @@ _systemstats_v6_load_systemstats(netsnmp
+      */
+     if (!(devin = fopen(filename, "r"))) {
+         DEBUGMSGTL(("access:systemstats",
+-                    "Failed to load Systemstats Table (linux1)\n"));
+-        if(!warned_open) {
+-            ++warned_open;
+-            snmp_log(LOG_ERR, "cannot open %s ...\n", filename);
+-        }
++                    "Failed to load Systemstats Table (linux1): cannot open %s\n", filename));
+         free(entry);
+         return 0;
+     }
+diff -up net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c.msg net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c
+--- net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c.msg	2012-09-14 10:22:29.531156739 +0200
++++ net-snmp-5.5/agent/mibgroup/tcp-mib/data_access/tcpConn_linux.c	2012-09-14 10:26:14.039395701 +0200
+@@ -259,26 +259,15 @@ _load6(netsnmp_container *container, u_i
+     int             rc = 0;
+     FILE           *in;
+     char            line[180];
+-    static int      log_open_err = 1;
+ 
+     netsnmp_assert(NULL != container);
+ 
+ #undef PROCFILE
+ #define PROCFILE "/proc/net/tcp6"
+     if (!(in = fopen(PROCFILE, "r"))) {
+-        snmp_log(LOG_ERR,"could not open " PROCFILE "\n");
+-        if (1 == log_open_err) {
+-            snmp_log(LOG_ERR,"could not open " PROCFILE "\n");
+-            log_open_err = 0;
+-        }
++        DEBUGMSGTL(("access:tcpconn:container","could not open " PROCFILE "\n"));
+         return -2;
+     }
+-    /*
+-     * if we turned off logging of open errors, turn it back on now that
+-     * we have been able to open the file.
+-     */
+-    if (0 == log_open_err)
+-        log_open_err = 1;
+     
+     fgets(line, sizeof(line), in); /* skip header */
+ 
+diff -up net-snmp-5.5/snmplib/file_utils.c.msg net-snmp-5.5/snmplib/file_utils.c
+--- net-snmp-5.5/snmplib/file_utils.c.msg	2009-08-05 22:07:38.000000000 +0200
++++ net-snmp-5.5/snmplib/file_utils.c	2012-09-14 10:26:14.041395698 +0200
+@@ -161,7 +161,7 @@ netsnmp_file_open(netsnmp_file * filei)
+         filei->fd = open(filei->name, filei->fs_flags, filei->mode);
+ 
+     if (filei->fd < 0) {
+-        snmp_log(LOG_ERR, "error opening %s (%d)\n", filei->name, errno);
++        DEBUGMSGTL(("netsnmp_file_open", "error opening %s (%d)\n", filei->name, errno));
+     }
+ 
+     /*
+@@ -200,7 +200,7 @@ netsnmp_file_close(netsnmp_file * filei)
+      */
+     rc = close(filei->fd);
+     if (rc < 0) {
+-        snmp_log(LOG_ERR, "error closing %s (%d)\n", filei->name, errno);
++        DEBUGMSGTL(("netsnmp_file_open", "error closing %s (%d)\n", filei->name, errno));
+     }
+     else
+         filei->fd = -1;

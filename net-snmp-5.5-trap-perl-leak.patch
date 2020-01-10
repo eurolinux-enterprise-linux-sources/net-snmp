@@ -1,0 +1,46 @@
+678314 - snmptrapd leaks memory when NetSNMP::TrapReceiver is used for trap handlers
+
+commit 0326ef99b7d79b19efab1426ba7af69af2d0b1e5
+Author: Wes Hardaker <hardaker@users.sourceforge.net>
+Date:   Mon Aug 16 16:26:50 2010 +0000
+
+    CHANGES: perl: patch 3046371: from christophb4: Fix memory leak in SNMPv1 trap handling.
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19335 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/perl/TrapReceiver/TrapReceiver.xs b/perl/TrapReceiver/TrapReceiver.xs
+index c1710b7..42a4c64 100644
+--- a/perl/TrapReceiver/TrapReceiver.xs
++++ b/perl/TrapReceiver/TrapReceiver.xs
+@@ -41,6 +41,7 @@ int   perl_trapd_handler( netsnmp_pdu           *pdu,
+     int noValuesReturned;
+     int callingCFfailed = 0;
+     int result = NETSNMPTRAPD_HANDLER_OK;
++    netsnmp_pdu * v2pdu = NULL;
+ 
+     dSP;
+     ENTER;
+@@ -50,8 +51,10 @@ int   perl_trapd_handler( netsnmp_pdu           *pdu,
+         return 0;
+ 
+     /* nuke v1 PDUs */
+-    if (pdu->command == SNMP_MSG_TRAP)
+-        pdu = convert_v1pdu_to_v2(pdu);
++    if (pdu->command == SNMP_MSG_TRAP) {
++        v2pdu = convert_v1pdu_to_v2(pdu);
++        pdu = v2pdu;
++    }
+ 
+     cb_data = handler->handler_data;
+     if (!cb_data || !cb_data->perl_cb)
+@@ -245,6 +248,10 @@ int   perl_trapd_handler( netsnmp_pdu           *pdu,
+ #endif    
+     free(tmparray);
+ 
++      if (v2pdu) {
++              snmp_free_pdu(v2pdu);
++      }
++
+     FREETMPS;
+     LEAVE;
+     return result;

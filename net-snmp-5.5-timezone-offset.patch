@@ -1,0 +1,74 @@
+683680 - hrSystemDate timzeone sign is incorrect
+Three patches are taken from upstream and backported.
+
+commit a872e884277335668782db49e48408b3d36e4b7e
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Thu Mar 10 15:51:27 2011 +0000
+
+    CHANGES: snmpd: BUG: 3178389: Fix inconsistent handling of TZ offsets
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@20104 06827809-a52a-0410-b366-d66718629ded
+
+commit 6a317d22641174763892b780377b131f5644dcc9
+Author: Niels Baggesen <nba@users.sourceforge.net>
+Date:   Sat Apr 9 19:50:30 2011 +0000
+
+    TZ is one hour off if HAVE_TM_TM_GMTOFF and SYSV (such is Linux)
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@20169 06827809-a52a-0410-b366-d66718629ded
+
+commit 4e9721a4ed45b60673963c365862cf9e5adb520d
+Author: Niels Baggesen <nba@users.sourceforge.net>
+Date:   Sat Apr 9 21:56:33 2011 +0000
+
+    HAVE_TM_TM_GMTOFF is HAVE_STRUCT_TM_TM_GMTOFF
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@20172 06827809-a52a-0410-b366-d66718629ded
+
+diff -up net-snmp-5.5/snmplib/snmp-tc.c.timezone-offset net-snmp-5.5/snmplib/snmp-tc.c
+--- net-snmp-5.5/snmplib/snmp-tc.c.timezone-offset	2008-09-08 22:24:12.000000000 +0200
++++ net-snmp-5.5/snmplib/snmp-tc.c	2011-08-01 16:00:54.535192914 +0200
+@@ -6,9 +6,6 @@
+ 
+ #include <net-snmp/net-snmp-config.h>
+ #include <sys/types.h>
+-#if HAVE_NETINET_IN_H
+-#include <netinet/in.h>
+-#endif
+ #if HAVE_STDLIB_H
+ #include <stdlib.h>
+ #endif
+@@ -16,8 +13,8 @@
+ #if HAVE_STRING_H
+ #include <string.h>
+ #endif
+-#if HAVE_STDLIB_H
+-#include <stdlib.h>
++#if HAVE_NETINET_IN_H
++#include <netinet/in.h>
+ #endif
+ 
+ #if TIME_WITH_SYS_TIME
+@@ -165,9 +162,9 @@ date_n_time(const time_t * when, size_t 
+      */
+     {
+ #ifdef HAVE_STRUCT_TM_TM_GMTOFF
+-    const int tzoffset = tm_p->tm_gmtoff;
++    const int tzoffset = -tm_p->tm_gmtoff;   /* Seconds east of UTC */
+ #else
+-    const int tzoffset = timezone;
++    const int tzoffset = timezone;           /* Seconds west of UTC */
+ #endif
+     if (tzoffset > 0)
+         string[8] = '-';
+@@ -179,7 +176,7 @@ date_n_time(const time_t * when, size_t 
+     }
+ #endif
+ 
+-#ifdef SYSV
++#if defined(SYSV) && !HAVE_STRUCT_TM_TM_GMTOFF
+     /*
+      * Daylight saving time
+      */

@@ -1,0 +1,23 @@
+784502 - It should be possible to run multiple instances of snmpd and snmptrapd
+760001 - Manpage fix for snmptrapd(8) to explicitly state how to specify mulitple configuration files
+
+commit a570238d58eb5a996b56f01a27a18df6f37d0f60
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Mon Jun 11 14:20:25 2012 +0200
+
+    More precisely describe -c option.
+
+diff --git a/man/snmptrapd.8.def b/man/snmptrapd.8.def
+index f6539fb..b6247bf 100644
+--- a/man/snmptrapd.8.def
++++ b/man/snmptrapd.8.def
+@@ -51,7 +51,8 @@ that it should apply to.
+ .BI "-c" " FILE"
+ Read 
+ .I FILE
+-as a configuration file.
++as a configuration file
++(or a comma-separated list of configuration files).
+ .TP
+ .B -C
+ Do not read any configuration files except the one optionally specified by the 

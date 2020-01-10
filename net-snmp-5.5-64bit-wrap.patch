@@ -1,0 +1,25 @@
+commit a727c0a9ed8f1e32ebec897d8ca9eb733b6743bf
+Author: jsafranek <jsafranek@06827809-a52a-0410-b366-d66718629ded>
+Date:   Tue Feb 1 09:41:28 2011 +0000
+
+    CHANGES: snmpd: fixed the agent writing 'looks like a 64bit wrap, but prev!=new' in syslog when computing ipSystemStats
+    
+    Without the memcpy, prev_vals->stats and new_vals->stats could get different,
+    which could much much later (when a counter gets bigger than 32 bits) result
+    in 'prev!=new' message in syslog. Typically this happens after long time of
+    uptime and it is very hard to reproduce.
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@19907 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/agent/mibgroup/ip-mib/data_access/systemstats_common.c b/net-snmp/agent/mibgroup/ip-mib/data_access/systemstats_common.c
+index 35f64ed..77d2204 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/data_access/systemstats_common.c
++++ b/net-snmp/agent/mibgroup/ip-mib/data_access/systemstats_common.c
+@@ -314,6 +314,7 @@ netsnmp_access_systemstats_entry_update_stats(netsnmp_systemstats_entry * prev_v
+         if (NULL == prev_vals->old_stats) {
+             return -2;
+         }
++        memcpy(&prev_vals->stats, &new_vals->stats, sizeof(new_vals->stats));
+     }
+     else {
+         /*

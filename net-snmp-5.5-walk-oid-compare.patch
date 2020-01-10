@@ -1,0 +1,25 @@
+636890 - RHEL6 RC1: errant enterprise MIBs seen when walking the mib
+
+Source: upstream, SVN rev. 17789
+Author: magfr <magfr@06827809-a52a-0410-b366-d66718629ded>
+Date:   Mon Oct 5 06:13:22 2009 +0000
+
+    CHANGES: snmpwalk: Handle the case when the end oid is longer than the current oid correctly
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@17789 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/apps/snmpwalk.c b/net-snmp/apps/snmpwalk.c
+index 2cc6a85..d8682ab 100644
+--- a/net-snmp/apps/snmpwalk.c
++++ b/net-snmp/apps/snmpwalk.c
+@@ -310,9 +310,8 @@ main(int argc, char *argv[])
+                  */
+                 for (vars = response->variables; vars;
+                      vars = vars->next_variable) {
+-                    if ((vars->name_length < end_len)
+-                        || (memcmp(end_oid, vars->name, end_len * sizeof(oid))
+-                            <= 0)) {
++                    if (snmp_oid_compare(end_oid, end_len,
++                                         vars->name, vars->name_length) <= 0) {
+                         /*
+                          * not part of this subtree 
+                          */

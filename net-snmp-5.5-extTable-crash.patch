@@ -1,0 +1,37 @@
+919259 - snmpd segfault at _get_cmdline when using 'exec'
+
+commit 46422d17dfdb416eb24ad7db7453ec473db20820
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue Apr 16 13:48:26 2013 +0200
+
+    CHANGES: snmpd: Fixed crash in UCD-SNMP-MIB::extTable
+    
+    snmpd crashed when the command to execute had no arguments, i.e. extend->args was NULL.
+
+diff -up net-snmp-5.5/agent/mibgroup/agent/extend.c.extTable-crash net-snmp-5.5/agent/mibgroup/agent/extend.c
+--- net-snmp-5.5/agent/mibgroup/agent/extend.c.extTable-crash	2013-04-16 14:55:21.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/agent/extend.c	2013-04-16 14:57:08.507776070 +0200
+@@ -1358,8 +1358,13 @@ handle_nsExtendOutput2Table(netsnmp_mib_
+ char * _get_cmdline(netsnmp_extend *extend)
+ {
+     size_t          size;
++    char           *args = extend->args;
+     
+-    size = strlen(extend->command) + strlen(extend->args) + 2;
++    if (args == NULL)
++        /* Use empty string for processes without arguments. */
++        args = "";
++
++    size = strlen(extend->command) + strlen(args) + 2;
+     if (size > cmdlinesize) {
+         cmdlinebuf = realloc(cmdlinebuf, size);
+ 	if (!cmdlinebuf) {
+@@ -1368,7 +1373,7 @@ char * _get_cmdline(netsnmp_extend *exte
+ 	}
+ 	cmdlinesize = size;
+     }
+-    sprintf(cmdlinebuf, "%s %s", extend->command, extend->args);
++    sprintf(cmdlinebuf, "%s %s", extend->command, args);
+     return cmdlinebuf;
+ }
+ 

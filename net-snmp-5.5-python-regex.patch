@@ -1,0 +1,23 @@
+Bug 711481 - Python binding regex fails to account for colon
+
+from upstream git:
+
+commit c5a8464c42a94c250ee2dfa2a473109a734203d8
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue Jul 26 14:24:55 2011 +0200
+
+    CHANGES: python: PATCH: 3310375: from Erinn Looney-Triggs: fixed parsing of varbinds with MIB names
+
+diff --git a/python/netsnmp/client.py b/python/netsnmp/client.py
+index 5cc7811..f998ea6 100644
+--- a/python/netsnmp/client.py
++++ b/python/netsnmp/client.py
+@@ -52,7 +52,7 @@ class Varbind(object):
+         self.type = STR(type)
+         # parse iid out of tag if needed
+         if iid == None and tag != None:
+-            regex = re.compile(r'^((?:\.\d+)+|(?:\w+(?:\-*\w+)+))\.?(.*)$')
++            regex = re.compile(r'^((?:\.\d+)+|(?:\w+(?:[-:]*\w+)+))\.?(.*)$')
+             match = regex.match(tag)
+             if match:
+                 (self.tag, self.iid) = match.group(1,2)

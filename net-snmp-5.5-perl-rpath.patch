@@ -1,0 +1,67 @@
+848319:  libperl.so not found
+
+Inspired by:
+
+commit 4c83b9229a7454f34f6ff75f69e67e4030c419b5
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Fri Oct 7 15:58:45 2011 +0200
+
+    CHANGES: snmplib: Set the rpath for libperl.so in libnetsnmpmibs.so such that the dynamic linker can find libperl.so without requiring the user to modify the dynamic linker settings.
+    
+    This change in agent/Makefile.in is necessary on the 5.5 branch and
+    later but not on the 5.4 branch. That is because the 5.4 branch uses
+    an older version of libtool that propagates the rpath of dependent
+    libraries. This is called inter-library dependency tracking in the
+    libtool manual. This functionality is present in libtool version 1
+    but not in libtool version 2. For more background information about
+    dynamic libraries and rpaths, see also the document with the title
+    "RpathIssue" on the Debian wiki (http://wiki.debian.org/RpathIssue).
+
+diff -up net-snmp-5.5/agent/helpers/Makefile.in.perl-rpath net-snmp-5.5/agent/helpers/Makefile.in
+--- net-snmp-5.5/agent/helpers/Makefile.in.perl-rpath	2007-06-26 23:45:20.000000000 +0200
++++ net-snmp-5.5/agent/helpers/Makefile.in	2012-10-10 10:56:57.920641010 +0200
+@@ -52,6 +52,8 @@ NETSNMPLIB      = ../../snmplib/libnetsn
+ HELPERLIB       = libnetsnmphelpers.$(LIB_EXTENSION)$(LIB_VERSION)
+ AGENTLIB        = ../libnetsnmpagent.$(LIB_EXTENSION)$(LIB_VERSION)
+ MIBLIB          = ../libnetsnmpmibs.$(LIB_EXTENSION)$(LIB_VERSION)
++PERLLDOPTS_FOR_LIBS = @PERLLDOPTS_FOR_LIBS@
++
+ # -I. -I.. -I../..
+ CPPFLAGS= $(TOP_INCLUDES) -I. $(AGENT_INCLUDES) $(MIBGROUP_INCLUDES) \
+ 	$(SNMPLIB_INCLUDES) @CPPFLAGS@
+@@ -140,5 +142,5 @@ LOBJS = all_helpers.lo \
+ all: standardall
+ 
+ libnetsnmphelpers.$(LIB_EXTENSION)$(LIB_VERSION):    $(LOBJS)
+-	$(LIB_LD_CMD) $@ $(LOBJS) $(AGENTLIB) $(NETSNMPLIB) $(LDFLAGS) $(LIB_LD_LIBS)
++	$(LIB_LD_CMD) $@ $(LOBJS) $(AGENTLIB) $(NETSNMPLIB) $(LDFLAGS) $(LIB_LD_LIBS) $(PERLLDOPTS_FOR_LIBS) @AGENTLIBS@
+ 	$(RANLIB) $@
+diff -up net-snmp-5.5/agent/Makefile.in.perl-rpath net-snmp-5.5/agent/Makefile.in
+--- net-snmp-5.5/agent/Makefile.in.perl-rpath	2012-10-10 10:38:29.020715254 +0200
++++ net-snmp-5.5/agent/Makefile.in	2012-10-10 10:38:29.218714405 +0200
+@@ -146,11 +146,11 @@ snmpd$(EXEEXT):	${LAGENTOBJS} $(USELIBS)
+ 
+ 
+ libnetsnmpagent.$(LIB_EXTENSION)$(LIB_VERSION):    ${LLIBAGENTOBJS} $(USELIBS)
+-	$(LIB_LD_CMD) $(AGENTLIB) ${LLIBAGENTOBJS} $(USELIBS) ${LAGENTLIBS} $(LDFLAGS) $(PERLLDOPTS_FOR_LIBS) $(LIB_LD_LIBS)
++	$(LIB_LD_CMD) $(AGENTLIB) ${LLIBAGENTOBJS} $(USELIBS) ${LAGENTLIBS} $(LDFLAGS) $(PERLLDOPTS_FOR_LIBS) $(LIB_LD_LIBS) @AGENTLIBS@
+ 	$(RANLIB) $(AGENTLIB)
+ 
+ libnetsnmpmibs.$(LIB_EXTENSION)$(LIB_VERSION): ${LMIBOBJS} $(HELPERLIB) $(AGENTLIB) $(USELIBS)
+-	$(LIB_LD_CMD) $(MIBLIB) ${LMIBOBJS} $(HELPERLIB) $(AGENTLIB) $(USELIBS) $(LDFLAGS) ${LMIBLIBS} $(LIB_LD_LIBS)
++	$(LIB_LD_CMD) $(MIBLIB) ${LMIBOBJS} $(HELPERLIB) $(AGENTLIB) $(USELIBS) $(LDFLAGS) ${LMIBLIBS} $(PERLLDOPTS_FOR_LIBS) $(LIB_LD_LIBS) @AGENTLIBS@
+ 	$(RANLIB) $(MIBLIB)
+ 
+ agentlib: $(AGENTLIB)
+diff -up net-snmp-5.5/net-snmp-config.in.perl-rpath net-snmp-5.5/net-snmp-config.in
+--- net-snmp-5.5/net-snmp-config.in.perl-rpath	2009-04-04 12:07:39.000000000 +0200
++++ net-snmp-5.5/net-snmp-config.in	2012-10-10 10:38:29.219714401 +0200
+@@ -173,7 +173,7 @@ else
+       echo $NSC_LIBDIR -lnetsnmp
+       ;;
+     --external-libs)
+-      echo $NSC_LDFLAGS $NSC_LIBS
++      echo $NSC_LDFLAGS $NSC_LNETSNMPLIBS $NSC_LIBS @PERLLDOPTS_FOR_APPS@
+       ;;
+     #################################################### agent lib
+     --base-agent-libs)

@@ -1,0 +1,50 @@
+710667 - Net-SNMP python bindings core dump with SNMPv3
+
+Two patches are here:
+
+commit 388a070e80b8f6447caccbeffed0417906b85194
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Tue Jan 5 22:33:02 2010 +0000
+
+    CHANGES: python: BUGS: 2919379: Initialise SNMP sessions properly
+    Provided by Diego Billi
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@17951 06827809-a52a-0410-b366-d66718629ded
+
+and the second patch fixes crash on PPC64. It's fixed slightly differently
+upstream (commit 7e1cae42bd79a0cdfb70521558a0dedc5aa0c42d).
+
+diff --git a/python/netsnmp/client_intf.c b/python/netsnmp/client_intf.c
+index 5600564..640cf2f 100644
+--- a/python/netsnmp/client_intf.c
++++ b/python/netsnmp/client_intf.c
+@@ -1239,6 +1239,7 @@ netsnmp_create_session_v3(PyObject *self, PyObject *args)
+     return NULL;
+ 
+   __libraries_init("python");
++  snmp_sess_init(&session);
+ 
+   if (version == 3) {
+     session.version = SNMP_VERSION_3;
+@@ -1337,7 +1338,7 @@ netsnmp_create_session_v3(PyObject *self, PyObject *args)
+     }
+   }
+   
+-  ss = snmp_open(&session);
++  ss = snmp_sess_open(&session);
+ 
+  end:
+   if (ss == NULL) {
+diff -up net-snmp-5.5/python/netsnmp/client_intf.c.orig net-snmp-5.5/python/netsnmp/client_intf.c
+--- net-snmp-5.5/python/netsnmp/client_intf.c.orig	2011-08-23 18:18:22.676917121 +0200
++++ net-snmp-5.5/python/netsnmp/client_intf.c	2011-08-23 18:18:38.322867895 +0200
+@@ -1349,7 +1349,7 @@ netsnmp_create_session_v3(PyObject *self
+   free (session.securityEngineID);
+   free (session.contextEngineID);
+ 
+-  return Py_BuildValue("i", (int)ss);
++  return Py_BuildValue("L", (long long)ss);
+ }
+ 
+ static PyObject *

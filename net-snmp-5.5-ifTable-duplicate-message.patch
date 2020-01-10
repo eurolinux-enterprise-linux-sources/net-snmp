@@ -1,0 +1,18 @@
+commit 937f826d1b22fdfd8baea9cea8e36f5948b30a17
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jul 27 15:40:49 2011 +0200
+
+    Show error message when two interfaces have the same IP address.
+
+diff --git a/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c b/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+index b4f7e3a..af8b623 100644
+--- a/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
++++ b/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+@@ -345,6 +345,7 @@ _netsnmp_ioctl_ipaddress_container_load_v4(netsnmp_container *container,
+ 
+         if (CONTAINER_INSERT(container, entry) < 0) {
+             DEBUGMSGTL(("access:ipaddress:container","error with ipaddress_entry: insert into container failed.\n"));
++            NETSNMP_LOGONCE((LOG_ERR, "Duplicate IPv4 address detected, some interfaces may not be visible in IP-MIB\n"));
+             netsnmp_access_ipaddress_entry_free(entry);
+             continue;
+         }

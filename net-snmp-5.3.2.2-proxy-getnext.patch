@@ -1,0 +1,96 @@
+663863: proxied OIDs unspecified in proxy statement in snmpd.conf
+
+Upstream SVN revissions 20369 + 20370
+(20371 is buggy and is going to be reverted)
+
+commit 07a17aa80506111a3f3c95f03572b1df8b1afe05
+Author: Jan Safranek <jsafrane@redhat.com>
+Date:   Mon Dec 20 16:03:32 2010 +0100
+
+    CHANGES: snmpd: fix GETNEXT processing in proxy mode.
+    
+    Having following entry in snmpd.conf:
+    proxy -v 2c -c public <remote host> .1.3.6.1.4.1.211.1.1.1.3.3.2.2.1 .1.3.6.1.2.1.1.5
+    
+    and issuing 'snmpgetnext localhost .1.3.6.1.4.1.211.1.1.1.3.3.2', one would
+    expect that the request is proxied to the remote host (which works well) and
+    value of .1.3.6.1.2.1.1.5.0 is returned (which does not work at all).
+    
+    snmpd asks the remote agent for next of .1.3.6.1.2.1.1, (=.1.3.6.1.2.1.1.1.0),
+    which is outside of .1.3.6.1.2.1.1.5 tree and snmpd discards the returned
+    value.
+    
+    snmpd should ask for the first value in .1.3.6.1.2.1.1.5 tree. Problem is, it
+    does not know, which OID it is -> I've added some woodoo^Hheuristics, which
+    asks the remote host for next of .1.3.6.1.2.1.1.4.4294967295, which must be
+    .1.3.6.1.2.1.1.5 (if it exists) or the next value (.1.3.6.1.2.1.1.5.0
+    in our case).
+
+diff --git a/net-snmp/agent/mibgroup/ucd-snmp/proxy.c b/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
+index 8082575..5aa67b9 100644
+--- a/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
++++ b/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
+@@ -406,7 +406,34 @@ proxy_handler(netsnmp_mib_handler *handler,
+         ourname = request->requestvb->name;
+         ourlength = request->requestvb->name_length;
+ 
+-        if (sp->base_len > 0) {
++        if (sp->base_len &&
++                reqinfo->mode == MODE_GETNEXT &&
++                (ourlength < sp->name_len ||
++                        snmp_oid_compare(ourname, sp->name_len, sp->name,
++                              sp->name_len) != 0)) {
++            DEBUGMSGTL(( "proxy", "request is out of registered range\n"));
++            /*
++             * Create GETNEXT request with an OID so the
++             * master returns the first OID in the registered range.
++             */
++            memcpy(ourname, sp->base, sp->base_len * sizeof(oid));
++            ourlength = sp->base_len;
++            if (ourname[ourlength-1] <= 1) {
++                /*
++                 * The registered range ends with x.y.z.1
++                 * -> ask for the next of x.y.z
++                 */
++                ourlength--;
++            } else {
++                /*
++                 * The registered range ends with x.y.z.A
++                 * -> ask for the next of x.y.z.A-1.MAX_SUBID
++                 */
++                ourname[ourlength-1]--;
++                ourname[ourlength] = MAX_SUBID;
++                ourlength++;
++            }
++        } else if (sp->base_len > 0) {
+             if ((ourlength - sp->name_len + sp->base_len) > MAX_OID_LEN) {
+                 /*
+                  * too large 
+commit 23bb19422190bded311816d4c833e5749c12fb46
+Author: hardaker <hardaker@06827809-a52a-0410-b366-d66718629ded>
+Date:   Mon May 9 14:18:53 2011 +0000
+
+    fixed the proxy support to do a proper OID less than OID compare.
+    We actually don't care about the length of the original request, only
+    that it was before the registered rebase
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@20370 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/agent/mibgroup/ucd-snmp/proxy.c b/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
+index c66fe7f..e513b6e 100644
+--- a/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
++++ b/net-snmp/agent/mibgroup/ucd-snmp/proxy.c
+@@ -409,10 +409,9 @@ proxy_handler(netsnmp_mib_handler *handler,
+         ourlength = request->requestvb->name_length;
+ 
+         if (sp->base_len &&
+-                reqinfo->mode == MODE_GETNEXT &&
+-                (ourlength < sp->name_len ||
+-                        snmp_oid_compare(ourname, sp->name_len, sp->name,
+-                              sp->name_len) != 0)) {
++            reqinfo->mode == MODE_GETNEXT &&
++            (snmp_oid_compare(ourname, ourlength,
++                              sp->name, sp->name_len) < 0)) {
+             DEBUGMSGTL(( "proxy", "request is out of registered range\n"));
+             /*
+              * Create GETNEXT request with an OID so the

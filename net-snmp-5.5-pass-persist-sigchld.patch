@@ -1,0 +1,110 @@
+703682 - RFE - Have net-snmp reap zombies ASAP
+
+upstream commit 11bd6e032d15ffb11d72e352ca6bc95023c3371a
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jul 27 14:45:09 2011 +0200
+
+    CHANGES: snmpd: run signal handlers when select() is interrupted.
+    
+    This behavior is indicated in comment on line 1244, but it was not actually done.
+upstream commit 31fa07cd9ffde46d41d2b5838c3fc4d01548bfb5
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jul 27 14:45:47 2011 +0200
+
+    CHANGES: snmpd: purge zombies of pass_persist child processes.
+    
+    If pass_persist process ends, we should process its sigchild signal.
+diff -up net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.c.pass-persist-sigchld net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.c
+--- net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.c.pass-persist-sigchld	2009-07-07 17:46:33.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.c	2011-07-28 16:35:02.957487407 +0200
+@@ -55,6 +55,7 @@ static void     close_persist_pipe(int i
+ static int      open_persist_pipe(int iindex, char *command);
+ static void     destruct_persist_pipes(void);
+ static int      write_persist_pipe(int iindex, const char *data);
++static void     sigchld_handler(int sig);
+ 
+ /*
+  * These are defined in pass.c 
+@@ -83,6 +84,13 @@ init_pass_persist(void)
+                                   pass_persist_parse_config,
+                                   pass_persist_free_config,
+                                   "miboid program");
++    register_signal(SIGCHLD, sigchld_handler);
++}
++
++void
++deinit_pass_persist(void)
++{
++    unregister_signal(SIGCHLD);
+ }
+ 
+ void
+@@ -827,3 +835,26 @@ close_persist_pipe(int iindex)
+     }
+ 
+ }
++
++static void sigchld_handler(int sig) {
++    int i;
++    int old_errno = errno;
++ 
++    if (!persist_pipes)
++        return;
++
++#if HAVE_SYS_WAIT_H
++    for (i = 1; i <= numpersistpassthrus; i++) {
++        if (persist_pipes[i].pid > 0) {
++            if (waitpid(persist_pipes[i].pid, 0, WNOHANG)) {
++                DEBUGMSGTL(("ucd-snmp/pass_persist",
++                            "sigchld_handler: closing persist_pipe %d\n",
++                            i));
++                close_persist_pipe(i);
++            }
++        }
++    }
++#endif
++   errno = old_errno;
++}
++
+diff -up net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.h.pass-persist-sigchld net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.h
+--- net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.h.pass-persist-sigchld	2004-06-07 10:21:41.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/ucd-snmp/pass_persist.h	2011-07-28 16:35:02.958487403 +0200
+@@ -7,6 +7,7 @@
+ config_require(util_funcs)
+ 
+ void            init_pass_persist(void);
++void            deinit_pass_persist(void);
+ extern FindVarMethod var_extensible_pass_persist;
+ extern WriteMethod setPassPersist;
+ 
+diff -up net-snmp-5.5/agent/snmpd.c.pass-persist-sigchld net-snmp-5.5/agent/snmpd.c
+--- net-snmp-5.5/agent/snmpd.c.pass-persist-sigchld	2011-07-28 16:35:02.568488916 +0200
++++ net-snmp-5.5/agent/snmpd.c	2011-07-28 16:35:02.956487411 +0200
+@@ -1139,13 +1139,6 @@ receive(void)
+ #endif
+         }
+ 
+-        for (i = 0; i < NUM_EXTERNAL_SIGS; i++) {
+-            if (external_signal_scheduled[i]) {
+-                external_signal_scheduled[i]--;
+-                external_signal_handler[i](i);
+-            }
+-        }
+-
+         /*
+          * default to sleeping for a really long time. INT_MAX
+          * should be sufficient (eg we don't care if time_t is
+@@ -1185,6 +1178,13 @@ receive(void)
+         netsnmp_external_event_info2(&numfds, &readfds, &writefds, &exceptfds);
+ 
+     reselect:
++        for (i = 0; i < NUM_EXTERNAL_SIGS; i++) {
++            if (external_signal_scheduled[i]) {
++                external_signal_scheduled[i]--;
++                external_signal_handler[i](i);
++            }
++        }
++
+         DEBUGMSGTL(("snmpd/select", "select( numfds=%d, ..., tvp=%p)\n",
+                     numfds, tvp));
+         if(tvp)

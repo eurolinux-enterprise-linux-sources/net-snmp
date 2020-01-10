@@ -1,0 +1,25 @@
+846436 - Problem with counting procs
+
+commit 5684b784fcfb13dc2ba767b37f121a12e7e7611b
+Author: jsafranek <jsafranek@06827809-a52a-0410-b366-d66718629ded>
+Date:   Wed Jan 26 09:12:20 2011 +0000
+
+    CHANGES: snmpd: fixed rare race condition when counting processes for UCD-SNMP-MIB::prTable
+    
+    The XX process can exit after fopen(/proc/XX/status) and before fgets() from it. snmpd should continue with other processes and not to stop.
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@19893 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/net-snmp/agent/mibgroup/ucd-snmp/proc.c b/net-snmp/agent/mibgroup/ucd-snmp/proc.c
+index f7c6a9e..eab2494 100644
+--- a/net-snmp/agent/mibgroup/ucd-snmp/proc.c
++++ b/net-snmp/agent/mibgroup/ucd-snmp/proc.c
+@@ -486,7 +486,7 @@ sh_count_procs(char *procname)
+           continue;
+       if (fgets(cmdline, sizeof(cmdline), status) == NULL) {
+           fclose(status);
+-          break;
++          continue;
+       }
+       /* Grab the state of the process as well
+        * (so we can ignore zombie processes)

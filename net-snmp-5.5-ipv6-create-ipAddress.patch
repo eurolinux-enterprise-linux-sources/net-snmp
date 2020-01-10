@@ -1,0 +1,269 @@
+616336 - [TAHI] ipAddressTable doesn't support snmpset operation
+616764 - snmpset cannot create new row in ipAddressTable
+
+Source: SVN rev. 19881 and 19882.
+
+diff --git a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+index e3d1f37..3bd328b 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
++++ b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.c
+@@ -546,6 +546,91 @@ _netsnmp_ioctl_ipaddress_delete_v4(netsnmp_ipaddress_entry * entry)
+     return 0;
+ }
+ 
++
++/**
++ * Add/remove IPv6 address using ioctl.
++ * @retval  0 : no error
++ * @retval -1 : bad parameter
++ * @retval -2 : couldn't create socket
++ * @retval -3 : ioctl failed
++ */
++int
++_netsnmp_ioctl_ipaddress_v6(netsnmp_ipaddress_entry * entry, int operation)
++{
++#ifdef linux
++    /*
++     * From linux/ipv6.h. It cannot be included because it collides
++     * with netinet/in.h
++     */
++    struct in6_ifreq {
++            struct in6_addr ifr6_addr;
++            uint32_t        ifr6_prefixlen;
++            int             ifr6_ifindex;
++    };
++
++    struct in6_ifreq               ifrq;
++    int                            rc, fd = -1;
++
++    DEBUGMSGT(("access:ipaddress:set", "_netsnmp_ioctl_ipaddress_set_v6 started\n"));
++
++    if (NULL == entry)
++        return -1;
++
++    netsnmp_assert(16 == entry->ia_address_len);
++
++    fd = socket(AF_INET6, SOCK_DGRAM, 0);
++    if(fd < 0) {
++        snmp_log(LOG_ERR,"couldn't create socket\n");
++        return -2;
++    }
++    memset(&ifrq, 0, sizeof(ifrq));
++    ifrq.ifr6_ifindex = entry->if_index;
++    ifrq.ifr6_prefixlen = 64;
++
++    memcpy(&ifrq.ifr6_addr, entry->ia_address,
++           entry->ia_address_len);
++
++    rc = ioctl(fd, operation, &ifrq);
++    close(fd);
++    if(rc < 0) {
++        snmp_log(LOG_ERR,"error setting address: %s(%d)\n", strerror(errno), errno);
++        return -3;
++    }
++    DEBUGMSGT(("access:ipaddress:set", "_netsnmp_ioctl_ipaddress_set_v6 finished\n"));
++    return 0;
++#else
++    /* we don't support ipv6 on this platform (yet) */
++    return -3;
++#endif
++
++}
++
++/**
++ *
++ * @retval  0 : no error
++ * @retval -1 : bad parameter
++ * @retval -2 : couldn't create socket
++ * @retval -3 : ioctl failed
++ */
++int
++_netsnmp_ioctl_ipaddress_set_v6(netsnmp_ipaddress_entry * entry)
++{
++    return _netsnmp_ioctl_ipaddress_v6(entry, SIOCSIFADDR);
++}
++
++/**
++ *
++ * @retval  0 : no error
++ * @retval -1 : bad parameter
++ * @retval -2 : couldn't create socket
++ * @retval -3 : ioctl failed
++ */
++int
++_netsnmp_ioctl_ipaddress_delete_v6(netsnmp_ipaddress_entry * entry)
++{
++    return _netsnmp_ioctl_ipaddress_v6(entry, SIOCDIFADDR);
++}
++
+ /**
+  * get the interface count and populate the ifc_buf
+  *
+diff --git a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.h b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.h
+index fc6e771..760738c 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.h
++++ b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_ioctl.h
+@@ -22,6 +22,11 @@ int
+ _netsnmp_ioctl_ipaddress_remove_v4(netsnmp_ipaddress_entry * entry);
+ 
+ int
++_netsnmp_ioctl_ipaddress_set_v6(netsnmp_ipaddress_entry * entry);
++int
++_netsnmp_ioctl_ipaddress_remove_v6(netsnmp_ipaddress_entry * entry);
++
++int
+ netsnmp_access_ipaddress_ioctl_get_interface_count(int sd, struct ifconf * ifc);
+ 
+ struct address_flag_info
+diff --git a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c
+index 05664ae..f170153 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c
++++ b/net-snmp/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c
+@@ -116,12 +116,14 @@ netsnmp_arch_ipaddress_create(netsnmp_ipaddress_entry *entry)
+     if (NULL == entry)
+         return -1;
+ 
+-    if (4 != entry->ia_address_len) {
+-        DEBUGMSGT(("access:ipaddress:create", "only ipv4 supported\n"));
++    if (4 == entry->ia_address_len) {
++        return _netsnmp_ioctl_ipaddress_set_v4(entry);
++    } else if (16 == entry->ia_address_len) {
++        return _netsnmp_ioctl_ipaddress_set_v6(entry);
++    } else {
++        DEBUGMSGT(("access:ipaddress:create", "wrong length of IP address\n"));
+         return -2;
+     }
+-
+-    return _netsnmp_ioctl_ipaddress_set_v4(entry);
+ }
+ 
+ /*
+@@ -133,12 +135,14 @@ netsnmp_arch_ipaddress_delete(netsnmp_ipaddress_entry *entry)
+     if (NULL == entry)
+         return -1;
+ 
+-    if (4 != entry->ia_address_len) {
++    if (4 == entry->ia_address_len) {
++        return _netsnmp_ioctl_ipaddress_delete_v4(entry);
++    } else if (16 == entry->ia_address_len) {
++        return _netsnmp_ioctl_ipaddress_delete_v6(entry);
++    } else {
+         DEBUGMSGT(("access:ipaddress:create", "only ipv4 supported\n"));
+         return -2;
+     }
+-
+-    return _netsnmp_ioctl_ipaddress_delete_v4(entry);
+ }
+ 
+ /**
+diff --git a/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable.c b/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable.c
+index 1e12fc7..d7e1cf2 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable.c
++++ b/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable.c
+@@ -1261,7 +1261,6 @@ int
+ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+ {
+     int             rc = MFD_SUCCESS;
+-    int             save_flags;
+ 
+     DEBUGMSGTL(("verbose:ipAddressTable:ipAddressTable_commit",
+                 "called\n"));
+@@ -1270,14 +1269,8 @@ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+     netsnmp_assert(NULL != rowreq_ctx);
+ 
+     /*
+-     * save flags, then clear until we actually do something
+-     */
+-    save_flags = rowreq_ctx->column_set_flags;
+-    rowreq_ctx->column_set_flags = 0;
+-
+-    /*
+      * commit ipAddressTable data
+-     * 1) check the column's flag in save_flags to see if it was set.
++     * 1) check the column's flag to see if it was set.
+      * 2) clear the flag when you handle that column
+      * 3) set the column's flag in column_set_flags if it needs undo
+      *    processing in case of a failure.
+@@ -1285,7 +1278,7 @@ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+     /*
+      * did anything change?
+      */
+-    if (0 == save_flags) {
++    if (0 == rowreq_ctx->column_set_flags) {
+         DEBUGMSGTL(("ipAddressTable:ipAddressTable_commit",
+                     "no change\n"));
+         return MFD_SUCCESS;
+@@ -1295,12 +1288,10 @@ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+      * pass everything to data access
+      * let data access know what columns are set
+      */
+-    rowreq_ctx->data->flags = save_flags;
++    rowreq_ctx->data->flags = rowreq_ctx->column_set_flags;
+ 
+-    if (save_flags & COLUMN_IPADDRESSROWSTATUS_FLAG) {
++    if (rowreq_ctx->column_set_flags & COLUMN_IPADDRESSROWSTATUS_FLAG) {
+         if (rowreq_ctx->rowreq_flags & MFD_ROW_CREATED) {
+-            netsnmp_assert(ROWSTATUS_CREATEANDGO ==
+-                           rowreq_ctx->ipAddressRowStatus);
+             rowreq_ctx->data->flags |= NETSNMP_ACCESS_IPADDRESS_CREATE;
+             rowreq_ctx->ipAddressCreated = netsnmp_get_agent_uptime();
+         } else if (ROWSTATUS_DESTROY == rowreq_ctx->ipAddressRowStatus) {
+@@ -1320,10 +1311,6 @@ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+         rc = MFD_ERROR;
+     } else {
+         rowreq_ctx->ipAddressLastChanged = netsnmp_get_agent_uptime();
+-        /*
+-         * set flag, in case we need to undo
+-         */
+-        rowreq_ctx->column_set_flags |= save_flags;
+     }
+ 
+     /*
+@@ -1333,12 +1320,6 @@ ipAddressTable_commit(ipAddressTable_rowreq_ctx * rowreq_ctx)
+         rowreq_ctx->rowreq_flags |= MFD_ROW_DIRTY;
+     }
+ 
+-    if (save_flags) {
+-        snmp_log(LOG_ERR, "unhandled columns (0x%x) in commit\n",
+-                 save_flags);
+-        return MFD_ERROR;
+-    }
+-
+     return rc;
+ }                               /* ipAddressTable_commit */
+ 
+diff --git a/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable_data_access.c b/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable_data_access.c
+index ac12e16..5468b73 100644
+--- a/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable_data_access.c
++++ b/net-snmp/agent/mibgroup/ip-mib/ipAddressTable/ipAddressTable_data_access.c
+@@ -673,9 +673,9 @@ ipAddressTable_validate_index(ipAddressTable_registration *
+      * TODO:430:M: |-> Validate potential ipAddressTable index.
+      *
+      *
+-     * xxx-rks: we only plan ipv4 support initially
+      */
+-    if ((4 != rowreq_ctx->tbl_idx.ipAddressAddr_len)) {
++    if ((4 != rowreq_ctx->tbl_idx.ipAddressAddr_len)
++            && (16 != rowreq_ctx->tbl_idx.ipAddressAddr_len)) {
+         snmp_log(LOG_WARNING, "invalid index for a new row in the "
+                  "ipAddressTable table.\n");
+         /*
+@@ -692,15 +692,9 @@ ipAddressTable_validate_index(ipAddressTable_registration *
+             return MFD_CANNOT_CREATE_NOW;
+         }
+     } else {
+-        rowreq_ctx->data->ia_address[0] =
+-            rowreq_ctx->tbl_idx.ipAddressAddr[0];
+-        rowreq_ctx->data->ia_address[1] =
+-            rowreq_ctx->tbl_idx.ipAddressAddr[1];
+-        rowreq_ctx->data->ia_address[2] =
+-            rowreq_ctx->tbl_idx.ipAddressAddr[2];
+-        rowreq_ctx->data->ia_address[3] =
+-            rowreq_ctx->tbl_idx.ipAddressAddr[3];
+-        rowreq_ctx->data->ia_address_len = 4;
++        memcpy(rowreq_ctx->data->ia_address, rowreq_ctx->tbl_idx.ipAddressAddr,
++                rowreq_ctx->tbl_idx.ipAddressAddr_len);
++        rowreq_ctx->data->ia_address_len = rowreq_ctx->tbl_idx.ipAddressAddr_len;
+     }
+ 
+     return rc;

@@ -1,0 +1,33 @@
+commit 680011dcaf92ac67f6a1e77826b83a382d415a42
+Author: Thomas Anders <tanders@users.sourceforge.net>
+Date:   Sat Jan 29 23:36:29 2011 +0000
+
+    NEWS: snmpd: BUG: 3166568: hrSystemProcesses missing in 5.6/5.6.1
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19898 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/host/hr_system.c b/agent/mibgroup/host/hr_system.c
+index 71f7f96..1875313 100644
+--- a/agent/mibgroup/host/hr_system.c
++++ b/agent/mibgroup/host/hr_system.c
+@@ -106,7 +106,7 @@ static long     get_max_solaris_processes(void);
+ static int      get_load_dev(void);
+ static int      count_users(void);
+ extern int      count_processes(void);
+-
++extern int      swrun_count_processes(void);
+ 
+         /*********************
+ 	 *
+@@ -287,7 +287,9 @@ var_hrsys(struct variable * vp,
+         long_return = count_users();
+         return (u_char *) & long_return;
+     case HRSYS_PROCS:
+-#if USING_HOST_HR_SWRUN_MODULE
++#if USING_HOST_DATA_ACCESS_SWRUN_MODULE
++        long_return = swrun_count_processes();
++#elif USING_HOST_HR_SWRUN_MODULE
+         long_return = count_processes();
+ #else
+ #if NETSNMP_NO_DUMMY_VALUES

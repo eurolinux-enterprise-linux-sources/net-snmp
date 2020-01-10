@@ -1,0 +1,30 @@
+840861 - snmpd does not report error when clientaddr <ip>:<port> cannot bind to the specified port
+
+Use better message when reporting netsnmp_udp_transport failures, it can be caused by
+many errors like already used port or permission error.
+
+In addition, don't show target address when the problem can be in the clientaddr one.
+
+diff -up net-snmp-5.5/snmplib/snmp_api.c.clientaddr-error-message net-snmp-5.5/snmplib/snmp_api.c
+--- net-snmp-5.5/snmplib/snmp_api.c.clientaddr-error-message	2015-01-14 09:46:03.058074302 +0100
++++ net-snmp-5.5/snmplib/snmp_api.c	2015-01-14 09:46:58.213223017 +0100
+@@ -238,7 +238,7 @@ static const char *api_errors[-SNMPERR_M
+     "No error",                 /* SNMPERR_SUCCESS */
+     "Generic error",            /* SNMPERR_GENERR */
+     "Invalid local port",       /* SNMPERR_BAD_LOCPORT */
+-    "Unknown host",             /* SNMPERR_BAD_ADDRESS */
++    "Invalid address",          /* SNMPERR_BAD_ADDRESS */
+     "Unknown session",          /* SNMPERR_BAD_SESSION */
+     "Too long",                 /* SNMPERR_TOO_LONG */
+     "No socket",                /* SNMPERR_NO_SOCKET */
+@@ -1550,7 +1550,9 @@ _sess_open(netsnmp_session * in_session)
+         DEBUGMSGTL(("_sess_open", "couldn't interpret peername\n"));
+         in_session->s_snmp_errno = SNMPERR_BAD_ADDRESS;
+         in_session->s_errno = errno;
+-        snmp_set_detail(in_session->peername);
++        if (!netsnmp_ds_get_string(NETSNMP_DS_LIBRARY_ID,
++                                    NETSNMP_DS_LIB_CLIENT_ADDR))
++            snmp_set_detail(in_session->peername);
+         return NULL;
+     }
+ 

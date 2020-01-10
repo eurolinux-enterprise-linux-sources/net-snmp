@@ -1,0 +1,230 @@
+917816 - net-snmp in RHEL5 and RHEL6 should be able to use "includefile" and "includedir" config directives in snmpd.conf
+
+This patch is not upstream, it just restores ABI of read_config and
+read_config_files, broken by upstream patches in
+net-snmp-5.5-includefile.patch
+
+diff -up net-snmp-5.5/include/net-snmp/library/read_config.h.includefile-abi net-snmp-5.5/include/net-snmp/library/read_config.h
+--- net-snmp-5.5/include/net-snmp/library/read_config.h.includefile-abi	2013-08-13 14:20:14.931170372 +0200
++++ net-snmp-5.5/include/net-snmp/library/read_config.h	2013-08-13 14:20:14.937170351 +0200
+@@ -46,8 +46,8 @@ extern          "C" {
+     int             netsnmp_config(char *);     /* parse a simple line: token=values */
+     void            netsnmp_config_remember(char *);    /* process later, during snmp_init() */
+     void            netsnmp_config_process_memories(void);      /* run all memories through parser */
+-    int             read_config(const char *, struct config_line *, int);
+-    int             read_config_files(int);
++    void            read_config(const char *, struct config_line *, int);
++    void            read_config_files(int);
+     void            free_config(void);
+ #if !defined(__GNUC__) || __GNUC__ < 2 || (__GNUC__ == 2&& __GNUC_MINOR__ < 8)
+     void            netsnmp_config_error(const char *, ...);
+@@ -64,7 +64,7 @@ extern          "C" {
+     char           *skip_token(char *);
+     char           *copy_nword(char *, char *, int);
+     char           *copy_word(char *, char *);  /* do not use */
+-    int             read_config_with_type(const char *, const char *);
++    void            read_config_with_type(const char *, const char *);
+     char           *read_config_save_octet_string(char *saveto,
+                                                   u_char * str,
+                                                   size_t len);
+diff -up net-snmp-5.5/snmplib/read_config.c.includefile-abi net-snmp-5.5/snmplib/read_config.c
+--- net-snmp-5.5/snmplib/read_config.c.includefile-abi	2013-08-13 14:20:14.935170358 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-08-13 14:22:55.610590638 +0200
+@@ -157,6 +157,10 @@ static int read_config_files_of_type(int
+ 
+ static int      config_errors;
+ 
++static int read_config_new(const char *, struct config_line *, int);
++static int read_config_files_new(int);
++static int read_config_with_type_new(const char *filename, const char *type);
++
+ struct config_files *config_files = NULL;
+ 
+ 
+@@ -472,12 +476,12 @@ read_config_get_handlers(const char *typ
+     return NULL;
+ }
+ 
+-int
+-read_config_with_type_when(const char *filename, const char *type, int when)
++static int
++read_config_with_type_when_new(const char *filename, const char *type, int when)
+ {
+     struct config_line *ctmp = read_config_get_handlers(type);
+     if (ctmp)
+-        return read_config(filename, ctmp, when);
++        return read_config_new(filename, ctmp, when);
+     else
+         DEBUGMSGTL(("read_config",
+                     "read_config: I have no registrations for type:%s,file:%s\n",
+@@ -485,12 +489,23 @@ read_config_with_type_when(const char *f
+     return SNMPERR_GENERR;     /* No config files read */
+ }
+ 
+-int
+-read_config_with_type(const char *filename, const char *type)
++void
++read_config_with_type_when(const char *filename, const char *type, int when)
+ {
+-    return read_config_with_type_when(filename, type, EITHER_CONFIG);
++    (void) read_config_with_type_when_new(filename, type, when);
+ }
+ 
++static int
++read_config_with_type_new(const char *filename, const char *type)
++{
++    return read_config_with_type_when_new(filename, type, EITHER_CONFIG);
++}
++
++void
++read_config_with_type(const char *filename, const char *type)
++{
++    read_config_with_type_new(filename, type);
++}
+ 
+ struct config_line *
+ read_config_find_handler(struct config_line *line_handlers,
+@@ -720,14 +735,16 @@ netsnmp_config_process_memories_when(int
+  *
+  * For each match, check that <when> is the designated time for the
+  * <line_handler> function to be executed before processing the line.
+- *
+- * Returns SNMPERR_SUCCESS if the file is processed successfully.
+- * Returns SNMPERR_GENERR  if it cannot.
+- *    Note that individual config token errors do not trigger SNMPERR_GENERR
+- *    It's only if the whole file cannot be processed for some reason.
+  */
++void read_config(const char *filename,
++            struct config_line *line_handler, int when)
++{
++    /* preserving ABI of read_config(), we just wrap read_config_new */
++    (void)read_config_new(filename, line_handler, when);
++}
++
+ int
+-read_config(const char *filename,
++read_config_new(const char *filename,
+             struct config_line *line_handler, int when)
+ {
+     static int      depth = 0;
+@@ -894,7 +911,7 @@ read_config(const char *filename,
+                     }
+                     prev_filename  = curfilename;
+                     prev_linecount = linecount;
+-                    ret = read_config(fname, line_handler, when);
++                    ret = read_config_new(fname, line_handler, when);
+                     curfilename = prev_filename;
+                     linecount   = prev_linecount;
+                     if ((ret != SNMPERR_SUCCESS) && (when != PREMIB_CONFIG))
+@@ -965,8 +982,8 @@ free_config(void)
+  * Return SNMPERR_GENERR if _no_ config files are processed
+  *    Whether this is actually an error is left to the application
+  */
+-int
+-read_configs_optional(const char *optional_config, int when)
++static int
++read_configs_optional_new(const char *optional_config, int when)
+ {
+     char *newp, *cp, *st = NULL;
+     int              ret = SNMPERR_GENERR;
+@@ -990,7 +1007,7 @@ read_configs_optional(const char *option
+         } else {
+             DEBUGMSGTL(("read_config:opt",
+                         "Reading optional config file: \"%s\"\n", cp));
+-            if ( read_config_with_type_when(cp, type, when) == SNMPERR_SUCCESS )
++            if ( read_config_with_type_when_new(cp, type, when) == SNMPERR_SUCCESS )
+                 ret = SNMPERR_SUCCESS;
+         }
+         cp = strtok_r(NULL, ",", &st);
+@@ -998,6 +1015,11 @@ read_configs_optional(const char *option
+     free(newp);
+     return ret;
+ }
++void
++read_configs_optional(const char *optional_config, int when)
++{
++    (void) read_configs_optional_new(optional_config, when);
++}
+ 
+ void
+ read_configs(void)
+@@ -1011,17 +1033,17 @@ read_configs(void)
+     DEBUGMSGTL(("read_config", "reading normal configuration tokens\n"));
+ 
+     if ((NULL != optional_config) && (*optional_config == '-')) {
+-        (void)read_configs_optional(++optional_config, NORMAL_CONFIG);
++        read_configs_optional(++optional_config, NORMAL_CONFIG);
+         optional_config = NULL; /* clear, so we don't read them twice */
+     }
+ 
+-    (void)read_config_files(NORMAL_CONFIG);
++    (void)read_config_files_new(NORMAL_CONFIG);
+ 
+     /*
+      * do this even when the normal above wasn't done 
+      */
+     if (NULL != optional_config)
+-        (void)read_configs_optional(optional_config, NORMAL_CONFIG);
++        read_configs_optional(optional_config, NORMAL_CONFIG);
+ 
+     netsnmp_config_process_memories_when(NORMAL_CONFIG, 1);
+ 
+@@ -1043,14 +1065,14 @@ read_premib_configs(void)
+     DEBUGMSGTL(("read_config", "reading premib configuration tokens\n"));
+ 
+     if ((NULL != optional_config) && (*optional_config == '-')) {
+-        (void)read_configs_optional(++optional_config, PREMIB_CONFIG);
++        read_configs_optional(++optional_config, PREMIB_CONFIG);
+         optional_config = NULL; /* clear, so we don't read them twice */
+     }
+ 
+-    (void)read_config_files(PREMIB_CONFIG);
++    (void)read_config_files_new(PREMIB_CONFIG);
+ 
+     if (NULL != optional_config)
+-        (void)read_configs_optional(optional_config, PREMIB_CONFIG);
++        read_configs_optional(optional_config, PREMIB_CONFIG);
+ 
+     netsnmp_config_process_memories_when(PREMIB_CONFIG, 0);
+ 
+@@ -1271,7 +1293,7 @@ read_config_files_in_path(const char *pa
+                     DEBUGMSGTL(("read_config_files",
+                                 "old config file found: %s, parsing\n",
+                                 configfile));
+-                    if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++                    if (read_config_new(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
+                         ret = SNMPERR_SUCCESS;
+                 }
+             }
+@@ -1279,12 +1301,12 @@ read_config_files_in_path(const char *pa
+         snprintf(configfile, sizeof(configfile),
+                  "%s/%s.conf", cptr2, ctmp->fileHeader);
+         configfile[ sizeof(configfile)-1 ] = 0;
+-        if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++        if (read_config_new(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
+             ret = SNMPERR_SUCCESS;
+         snprintf(configfile, sizeof(configfile),
+                  "%s/%s.local.conf", cptr2, ctmp->fileHeader);
+         configfile[ sizeof(configfile)-1 ] = 0;
+-        if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++        if (read_config_new(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
+             ret = SNMPERR_SUCCESS;
+ 
+         if(done)
+@@ -1375,8 +1397,14 @@ read_config_files_of_type(int when, stru
+     return ret;
+ }
+ 
+-int
+-read_config_files(int when) {
++void read_config_files(int when)
++{
++    /* preserving ABI of read_config_files(), we just call read_config_files_new */
++    (void) read_config_files_new(when);
++}
++
++static int
++read_config_files_new(int when) {
+ 
+     struct config_files *ctmp = config_files;
+     int                  ret  = SNMPERR_GENERR;

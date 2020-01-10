@@ -1,0 +1,28 @@
+800671 - trapsess sends the wrong EngineID
+805689 - trapsess sends the wrong EngineID
+
+commit 46cbad6fdba5221de6c6310fbea086524001b0b1
+Author: Wes Hardaker <hardaker@users.sourceforge.net>
+Date:   Tue Sep 21 00:06:06 2010 +0000
+
+    CHANGES: snmpd: patch 3062526: from mariog85: fix security engineID setting in the trapsess directive
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-2-patches@19383 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/agent_trap.c b/agent/agent_trap.c
+index 3e3f060..51da754 100644
+--- a/agent/agent_trap.c
++++ b/agent/agent_trap.c
+@@ -933,10 +933,10 @@ send_trap_to_sess(netsnmp_session * sess, netsnmp_pdu *template_pdu)
+     } else {
+         if ((sess->version == SNMP_VERSION_3) &&
+                 (pdu->command == SNMP_MSG_TRAP2) &&
+-                (pdu->securityEngineIDLen == 0)) {
++                (sess->securityEngineIDLen == 0)) {
+             len = snmpv3_get_engineID(tmp, sizeof(tmp));
+             memdup(&pdu->securityEngineID, tmp, len);
+-            pdu->securityEngineIDLen = len;
++            sess->securityEngineIDLen = len;
+         }
+ 
+         result = snmp_send(sess, pdu);

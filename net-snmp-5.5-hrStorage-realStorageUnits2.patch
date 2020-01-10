@@ -1,0 +1,41 @@
+748410 - hrStorageSize from HOST-RESOURCES-TYPES mib reports incorrect size for filesystems > 16TB
+
+Continuation - RHEL6 specific patch.
+
+Turn the option on by default and document it in a man page.
+
+diff -up net-snmp-5.5/man/snmpd.conf.5.def.stor net-snmp-5.5/man/snmpd.conf.5.def
+--- net-snmp-5.5/man/snmpd.conf.5.def.stor	2012-02-06 14:28:44.333926246 +0100
++++ net-snmp-5.5/man/snmpd.conf.5.def	2012-02-06 14:31:59.719332775 +0100
+@@ -481,8 +481,8 @@ Setting this directive to '1' reports su
+ .IP "realStorageUnits"
+ controlls how the agent reports hrStorageAllocationUnits, hrStorageSize and
+ hrStorageUsed in hrStorageTable.
+-For big storage drives with small allocation units the agent re-calculates
+-these values so they all fit Integer32 and
++With this option set to '0', the agent re-calculates these values for
++big storage drives with small allocation units so
+ hrStorageAllocationUnits x hrStorageSize
+ gives real size of the storage.
+ .RS
+@@ -492,7 +492,7 @@ reported as  hrStorageAllocationUnits =
+ so 8192 x 2147483647 gives real size of the filesystem (=16 TB).
+ .RE
+ .IP
+-Setting this directive to '1' turns off
++Setting this directive to '1' (=default) turns off
+ this calculation and the agent reports real hrStorageAllocationUnits, but it
+ might report wrong hrStorageSize for big drives because the value won't fit into
+ Integer32. In this case, hrStorageAllocationUnits x hrStorageSize won't give
+diff -up net-snmp-5.5/agent/mibgroup/host/hrh_storage.c.orig net-snmp-5.5/agent/mibgroup/host/hrh_storage.c
+--- net-snmp-5.5/agent/mibgroup/host/hrh_storage.c.orig	2012-02-06 15:29:31.376069566 +0100
++++ net-snmp-5.5/agent/mibgroup/host/hrh_storage.c	2012-02-06 16:40:00.959274937 +0100
+@@ -130,6 +130,8 @@ init_hrh_storage(void)
+ 			       NETSNMP_DS_APPLICATION_ID,
+ 			       NETSNMP_DS_AGENT_SKIPNFSINHOSTRESOURCES);
+ 
++    netsnmp_ds_set_boolean(NETSNMP_DS_APPLICATION_ID,
++                   NETSNMP_DS_AGENT_REALSTORAGEUNITS, 1);
+     netsnmp_ds_register_config(ASN_BOOLEAN, appname, "realStorageUnits",
+                    NETSNMP_DS_APPLICATION_ID,
+                    NETSNMP_DS_AGENT_REALSTORAGEUNITS);

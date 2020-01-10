@@ -1,0 +1,19 @@
+919952 - snmpd returns "<exited>" as hrSWRunPath for each kernel thread
+diff -up net-snmp-5.5/agent/mibgroup/host/hr_swrun.c.kernel-threads net-snmp-5.5/agent/mibgroup/host/hr_swrun.c
+--- net-snmp-5.5/agent/mibgroup/host/hr_swrun.c.kernel-threads	2013-06-28 10:07:20.892189485 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hr_swrun.c	2013-06-28 09:49:04.000000000 +0200
+@@ -808,12 +808,8 @@ var_hrswrun(struct variable * vp,
+         strcpy(string, proc_table[LowProcIndex].kp_proc.p_comm);
+     #endif
+ #elif defined(linux)
+-	if( (cp=get_proc_name_from_cmdline(pid,buf,sizeof(buf)-1)) == NULL ) {
+-            strcpy(string, "<exited>");
+-            *var_len = strlen(string);
+-            return (u_char *) string;
+-        }
+-        if (*cp)    /* argv[0] '\0' argv[1] '\0' .... */
++        cp=get_proc_name_from_cmdline(pid,buf,sizeof(buf)-1);
++        if (cp && *cp)    /* argv[0] '\0' argv[1] '\0' .... */
+             strcpy(string, cp);
+         else {
+             /*

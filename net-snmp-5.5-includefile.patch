@@ -1,0 +1,1307 @@
+917816 - net-snmp in RHEL5 and RHEL6 should be able to use "includefile" and "includedir" config directives in snmpd.conf
+
+Ton of upstream patches here, see below.
+
+The patches change ABI of snmplibs, subsequent patch restores it.
+
+commit da775a92e0c25b0ad153f14d7ead344a31a4105f
+Author: Robert Story <rstory@users.sourceforge.net>
+Date:   Mon Mar 8 22:44:00 2010 +0000
+
+    NEWS: snmplib: conf files can now include other conf files
+     - also tweaked debug tokens here and there
+
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18223 06827809-a52a-0410-b366-d66718629ded
+
+diff -ur old/man/snmp_config.5.def net-snmp-5.5/man/snmp_config.5.def
+--- old/man/snmp_config.5.def	2013-07-03 17:07:54.000000000 +0200
++++ net-snmp-5.5/man/snmp_config.5.def	2013-07-03 17:08:49.392704116 +0200
+@@ -144,6 +144,21 @@
+ .PP
+ Any lines beginning with the character '#' in the configuration files
+ are treated as a comment and are not parsed.
++.SH "INCLUDING OTHER CONFIGURATION FILES"
++It is possible to include other configuration files for processing
++during normal configuration file processing.:
++.PP
++.RS
++.nf
++# include site specific config
++include site.conf
++.RE
++.PP
++This will search every directory in the configuration path for files
++named site.conf, and will process those files before returning to the
++processing of the original file. Note that if '.conf' is omitted,
++it will be appended. That is, all configuration files must end
++in '.conf'.
+ .SH "API INTERFACE"
+ .PP
+ Information about writing C code that makes use of this system in
+diff -ur old/snmplib/read_config.c net-snmp-5.5/snmplib/read_config.c
+--- old/snmplib/read_config.c	2009-05-06 23:45:20.000000000 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-07-03 17:11:57.816117075 +0200
+@@ -135,10 +135,14 @@
+ #include <net-snmp/library/snmp_api.h>
+ #include <net-snmp/library/callback.h>
+ 
++static int read_config_files_of_type(int when, struct config_files *ctmp);
++
++
+ static int      config_errors;
+ 
+ struct config_files *config_files = NULL;
+ 
++
+ static struct config_line *
+ internal_register_config_handler(const char *type_param,
+ 				 const char *token,
+@@ -192,8 +196,11 @@
+         }
+ 
+         (*ctmp)->fileHeader = strdup(type);
++        DEBUGMSGTL(("9:read_config:type", "new type %s\n", type));
+     }
+ 
++    DEBUGMSGTL(("9:read_config:register_handler", "registering %s %s\n",
++                type, token));
+     /*
+      * Find parser type in current list  -OR-  create a new
+      * line parser entry.
+@@ -493,18 +500,21 @@
+     lptr = read_config_find_handler(lptr, token);
+     if (lptr != NULL) {
+         if (when == EITHER_CONFIG || lptr->config_time == when) {
+-            DEBUGMSGTL(("read_config",
++            DEBUGMSGTL(("read_config:parser",
+                         "Found a parser.  Calling it: %s / %s\n", token,
+                         cptr));
+             /*
+              * Stomp on any trailing whitespace
+              */
+             cp = &(cptr[strlen(cptr)-1]);
+-            while (isspace(*cp)) {
++            while ((cp > cptr) && isspace(*cp)) {
+                 *(cp--) = '\0';
+             }
+             (*(lptr->parse_line)) (token, cptr);
+         }
++        else
++            DEBUGMSGTL(("9:read_config:parser",
++                        "%s handler not registered for this time\n", token));
+     } else if (when != PREMIB_CONFIG && 
+ 	       !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+ 				       NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
+@@ -635,7 +645,7 @@
+     mem = *memp;
+ 
+     while (mem) {
+-        DEBUGMSGTL(("read_config", "processing memory: %s\n", mem->line));
++        DEBUGMSGTL(("read_config:mem", "processing memory: %s\n", mem->line));
+         snmp_config_when(mem->line, when);
+         mem = mem->next;
+     }
+@@ -690,7 +700,8 @@
+ read_config(const char *filename,
+             struct config_line *line_handler, int when)
+ {
+-
++    static int      depth = 0;
++    static int      files = 0;
+     FILE           *ifile;
+     char            line[STRINGMAX], token[STRINGMAX];
+     char           *cptr;
+@@ -721,11 +732,26 @@
+             snmp_log_perror(filename);
+ #endif                          /* ENOENT */
+         return;
+-    } else {
+-        DEBUGMSGTL(("read_config", "Reading configuration %s\n",
+-                    filename));
+     }
+ 
++#define CONFIG_MAX_FILES 4096
++    if (files > CONFIG_MAX_FILES) {
++        netsnmp_config_error("maximum conf file count (%d) exceeded\n",
++                             CONFIG_MAX_FILES);
++        return;
++    }
++#define CONFIG_MAX_RECURSE_DEPTH 16
++    if (depth > CONFIG_MAX_RECURSE_DEPTH) {
++        netsnmp_config_error("nested include depth > %d\n",
++                             CONFIG_MAX_RECURSE_DEPTH);
++        return;
++    }
++    ++files;
++    ++depth;
++
++    DEBUGMSGTL(("read_config:file", "Reading configuration %s (%d)\n",
++                filename, when));
++    
+     while (fgets(line, sizeof(line), ifile) != NULL) {
+         lptr = line_handler;
+         linecount++;
+@@ -733,6 +759,8 @@
+         i = strlen(line) - 1;
+         if (line[i] == '\n')
+             line[i] = 0;
++        DEBUGMSGTL(("9:read_config:line", "%s:%d examining: %s\n",
++                    filename, linecount, line));
+         /*
+          * check blank line or # comment 
+          */
+@@ -751,7 +779,7 @@
+ 					 &token[1]);
+                     continue;
+                 }
+-                DEBUGMSGTL(("read_config",
++                DEBUGMSGTL(("read_config:context",
+                             "Switching to new context: %s%s\n",
+                             ((cptr) ? "(this line only) " : ""),
+                             &token[1]));
+@@ -767,19 +795,31 @@
+                      */
+                     cptr = copy_nword(cptr, token, sizeof(token));
+                 }
++            } else if ((token[0] == 'i') && (strcmp(token,"include")==0)) {
++                struct config_files ctmp = { cptr, line_handler, NULL };
++                int len = strlen(cptr);
++                DEBUGMSGTL(("read_config:include", "before %s\n", cptr));
++                if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
++                   cptr[len-5] = 0; /* chop off .conf */
++                read_config_files_of_type(when,&ctmp);
++                if ((len > 5) && (cptr[len-5] == 0))
++                   cptr[len-5] = '.'; /* restore .conf */
++                DEBUGMSGTL(("read_config:include", "after %s\n", cptr));
++                continue;
+             } else {
+                 lptr = line_handler;
+             }
+             if (cptr == NULL) {
+ 		netsnmp_config_error("Blank line following %s token.", token);
+             } else {
+-                DEBUGMSGTL(("read_config", "%s:%d examining: %s\n",
++                DEBUGMSGTL(("read_config:line", "%s:%d examining: %s\n",
+                             filename, linecount, line));
+                 run_config_handler(lptr, token, cptr, when);
+             }
+         }
+     }
+     fclose(ifile);
++    --depth;
+     return;
+ 
+ }                               /* end read_config() */
+@@ -820,7 +860,7 @@
+                         "Optional File \"%s\" does not exist.\n", cp));
+             snmp_log_perror(cp);
+         } else {
+-            DEBUGMSGTL(("read_config",
++            DEBUGMSGTL(("read_config:opt",
+                         "Reading optional config file: \"%s\"\n", cp));
+             read_config_with_type_when(cp, type, when);
+         }
+@@ -1034,7 +1074,7 @@
+ 
+     envconfpath = strdup(path);
+ 
+-    DEBUGMSGTL(("read_config", " config path used for %s:%s (persistent path:%s)\n",
++    DEBUGMSGTL(("read_config:path", " config path used for %s:%s (persistent path:%s)\n",
+                 ctmp->fileHeader, envconfpath, perspath));
+     cptr1 = cptr2 = envconfpath;
+     done = 0;
+@@ -1046,12 +1086,12 @@
+         else
+             *cptr1 = 0;
+ 
+-        DEBUGMSGTL(("read_config", " config dir: %s\n", cptr2 ));
++        DEBUGMSGTL(("read_config:dir", " config dir: %s\n", cptr2 ));
+         if (stat(cptr2, &statbuf) != 0) {
+             /*
+              * Directory not there, continue 
+              */
+-            DEBUGMSGTL(("read_config", " Directory not present: %s\n", cptr2 ));
++            DEBUGMSGTL(("read_config:dir", " Directory not present: %s\n", cptr2 ));
+             cptr2 = ++cptr1;
+             continue;
+         }
+@@ -1060,7 +1100,7 @@
+             /*
+              * Not a directory, continue 
+              */
+-            DEBUGMSGTL(("read_config", " Not a directory: %s\n", cptr2 ));
++            DEBUGMSGTL(("read_config:dir", " Not a directory: %s\n", cptr2 ));
+             cptr2 = ++cptr1;
+             continue;
+         }
+@@ -1076,6 +1116,7 @@
+         if (strncmp(cptr2, perspath, strlen(perspath)) == 0 ||
+             (persfile != NULL &&
+              strncmp(cptr2, persfile, strlen(persfile)) == 0)) {
++            DEBUGMSGTL(("read_config:persist", " persist dir: %s\n", cptr2 ));
+             /*
+              * limit this to the known storage directory only 
+              */
+@@ -1146,21 +1187,17 @@
+  *
+  * EXITs if any 'config_errors' are logged while parsing config file lines.
+  */
+-void
+-read_config_files(int when)
++static int
++read_config_files_of_type(int when, struct config_files *ctmp)
+ {
+-    const char     *confpath, *perspath, *persfile, *envconfpath;
+-    struct config_files *ctmp = config_files;
++    const char     *confpath, *persfile, *envconfpath;
++    char           *perspath;
+ 
+     if (netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                NETSNMP_DS_LIB_DONT_PERSIST_STATE)
+-     || netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+-                               NETSNMP_DS_LIB_DISABLE_CONFIG_LOAD)) return;
+-
+-    config_errors = 0;
+-
+-    if (when == PREMIB_CONFIG)
+-        free_config();
++        || netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
++                                  NETSNMP_DS_LIB_DISABLE_CONFIG_LOAD)
++        || (NULL == ctmp)) return;
+ 
+     /*
+      * these shouldn't change
+@@ -1169,10 +1206,6 @@
+     persfile = netsnmp_getenv("SNMP_PERSISTENT_FILE");
+     envconfpath = netsnmp_getenv("SNMPCONFPATH");
+ 
+-    /*
+-     * read all config file types 
+-     */
+-    for (; ctmp != NULL; ctmp = ctmp->next) {
+ 
+         /*
+          * read the config files 
+@@ -1197,12 +1230,30 @@
+             read_config_files_in_path(envconfpath, ctmp, when, perspath,
+                                       persfile);
+         }
++}
++
++void
++read_config_files(int when) {
++
++    struct config_files *ctmp = config_files;
++
++    config_errors = 0;
++
++    if (when == PREMIB_CONFIG)
++        free_config();
++
++    /*
++     * read all config file types 
++     */
++    for (; ctmp != NULL; ctmp = ctmp->next) {
++        read_config_files_of_type(when, ctmp);
+     }
+ 
+     if (config_errors) {
+         snmp_log(LOG_ERR, "net-snmp: %d error(s) in config file(s)\n",
+                  config_errors);
+     }
++
+ }
+ 
+ void
+@@ -1288,7 +1339,7 @@
+         fprintf(fout, "%s", line);
+         if (line[strlen(line)] != '\n')
+             fprintf(fout, "\n");
+-        DEBUGMSGTL(("read_config", "storing: %s\n", line));
++        DEBUGMSGTL(("read_config:store", "storing: %s\n", line));
+         fclose(fout);
+     } else {
+         snmp_log(LOG_ERR, "read_config_store open failure on %s\n", filep);
+commit 5375339992fc911d25fca900a22ea351a3e12bd2
+Author: Robert Story <rstory@users.sourceforge.net>
+Date:   Tue Mar 9 17:09:12 2010 +0000
+
+    remove debug msg used during debugging
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18228 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index e827ae5..84d11b3 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -803,13 +803,11 @@ read_config(const char *filename,
+             } else if ((token[0] == 'i') && (strcmp(token,"include")==0)) {
+                 struct config_files ctmp = { cptr, line_handler, NULL };
+                 int len = strlen(cptr);
+-                DEBUGMSGTL(("read_config:include", "before %s\n", cptr));
+                 if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
+                    cptr[len-5] = 0; /* chop off .conf */
+                 read_config_files_of_type(when,&ctmp);
+                 if ((len > 5) && (cptr[len-5] == 0))
+                    cptr[len-5] = '.'; /* restore .conf */
+-                DEBUGMSGTL(("read_config:include", "after %s\n", cptr));
+                 continue;
+             } else {
+                 lptr = line_handler;
+commit bcabbf24d1270e7601399c8879dc93df4d9424e7
+Author: Thomas Anders <tanders@users.sourceforge.net>
+Date:   Sat Apr 10 23:24:18 2010 +0000
+
+    build fix for C89 compilers (e.g. on HP-UX 10.20)
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18491 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index 67e0ca2..ff933b8 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -801,8 +801,11 @@ read_config(const char *filename,
+                     cptr = copy_nword(cptr, token, sizeof(token));
+                 }
+             } else if ((token[0] == 'i') && (strcmp(token,"include")==0)) {
+-                struct config_files ctmp = { cptr, line_handler, NULL };
++                struct config_files ctmp;
+                 int len = strlen(cptr);
++                ctmp.fileHeader = cptr;
++                ctmp.start = line_handler;
++                ctmp.next = NULL;
+                 if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
+                    cptr[len-5] = 0; /* chop off .conf */
+                 read_config_files_of_type(when,&ctmp);
+commit 744644722971de6b586b296f3a75e2adae1a7782
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Sat Jul 24 15:42:27 2010 +0000
+
+    Don't lose track of which config file was being parsed,
+    when processing an included config file.
+    Fixes a bug with reporting later config errors.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19246 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index a3dba9c..d3d1d02 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -800,12 +800,15 @@ read_config(const char *filename,
+             } else if ((token[0] == 'i') && (strcmp(token,"include")==0)) {
+                 struct config_files ctmp;
+                 int len = strlen(cptr);
++                char *prev_curfilename;
+                 ctmp.fileHeader = cptr;
+                 ctmp.start = line_handler;
+                 ctmp.next = NULL;
+                 if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
+                    cptr[len-5] = 0; /* chop off .conf */
++                prev_curfilename = curfilename;
+                 read_config_files_of_type(when,&ctmp);
++                curfilename = prev_curfilename;
+                 if ((len > 5) && (cptr[len-5] == 0))
+                    cptr[len-5] = '.'; /* restore .conf */
+                 continue;
+commit 3252dd89479e7974cbf872d4e94ffec92a425c30
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Wed Jul 28 14:09:08 2010 +0000
+
+    Extend 'include' config file processing to cover three
+    different modes of working:
+      -  look for the file on the config search path
+      -  include the specified file by name
+      -  ioad the contents of the specified directory
+    Use different config tokens to distinguish these cases.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19256 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index d3d1d02..eaaad65 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -113,6 +113,23 @@
+ #endif
+ #include <errno.h>
+ 
++#if HAVE_DIRENT_H
++# include <dirent.h>
++# define NAMLEN(dirent) strlen((dirent)->d_name)
++#else
++# define dirent direct
++# define NAMLEN(dirent) (dirent)->d_namlen
++# if HAVE_SYS_NDIR_H
++#  include <sys/ndir.h>
++# endif
++# if HAVE_SYS_DIR_H
++#  include <sys/dir.h>
++# endif
++# if HAVE_NDIR_H
++#  include <ndir.h>
++# endif
++#endif
++
+ #if HAVE_DMALLOC_H
+ #include <dmalloc.h>
+ #endif
+@@ -797,10 +814,51 @@ read_config(const char *filename,
+                      */
+                     cptr = copy_nword(cptr, token, sizeof(token));
+                 }
+-            } else if ((token[0] == 'i') && (strcmp(token,"include")==0)) {
++            } else if ((token[0] == 'i') && (strncasecmp(token,"include", 7 )==0)) {
++                if ( strcasecmp( token, "include" )==0) {
++                    if (when != PREMIB_CONFIG && 
++	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
++				                NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
++	                netsnmp_config_warn("Ambiguous token '%s' - use includeDir (or includeFile) instead.", token);
++                    }
++                } else if ( strcasecmp( token, "includedir" )==0) {
++                    DIR *d;
++                    struct dirent *entry;
++                    char  filename[SNMP_MAXPATH];
++                    int   len;
++                    const char *prev_curfilename;
++
++                    if ((d=opendir(cptr)) == NULL )
++                        continue;
++                    prev_curfilename = curfilename;
++                    while ((entry = readdir( d )) != NULL ) {
++                        if ( entry->d_name && entry->d_name[0] != '.') {
++                            len = NAMLEN(entry);
++                            if ((len > 5) && (strcmp(&(entry->d_name[len-5]),".conf") == 0)) {
++                                snprintf(filename, SNMP_MAXPATH, "%s/%s",
++                                         cptr, entry->d_name);
++                                read_config(filename, line_handler, when);
++                            }
++                        }
++                    }
++                    closedir(d);
++                    curfilename = prev_curfilename;
++                    continue;
++                } else if ( strcasecmp( token, "includefile" )==0) {
++                    /* TODO: handle relative paths */
++                    struct config_files ctmp;
++                    const char *prev_curfilename;
++                    ctmp.fileHeader = cptr;
++                    ctmp.start = line_handler;
++                    ctmp.next = NULL;
++                    prev_curfilename = curfilename;
++                    read_config(cptr, line_handler, when);
++                    curfilename = prev_curfilename;
++                    continue;
++                } else if ( strcasecmp( token, "includesearch" )==0) {
+                 struct config_files ctmp;
+                 int len = strlen(cptr);
+-                char *prev_curfilename;
++                const char *prev_curfilename;
+                 ctmp.fileHeader = cptr;
+                 ctmp.start = line_handler;
+                 ctmp.next = NULL;
+@@ -812,6 +870,14 @@ read_config(const char *filename,
+                 if ((len > 5) && (cptr[len-5] == 0))
+                    cptr[len-5] = '.'; /* restore .conf */
+                 continue;
++                } else {
++                    if (when != PREMIB_CONFIG && 
++	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
++				                NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
++	                netsnmp_config_warn("Unknown include token: %s.", token);
++	            }
++                }
++                continue;
+             } else {
+                 lptr = line_handler;
+             }
+commit 869e919095e93dcb332d6d664d0077c438242c4f
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Wed Jul 28 14:10:39 2010 +0000
+
+    Fix indentation for 'includeSearch' processing code.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19257 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index eaaad65..1967bec 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -843,7 +843,6 @@ read_config(const char *filename,
+                     }
+                     closedir(d);
+                     curfilename = prev_curfilename;
+-                    continue;
+                 } else if ( strcasecmp( token, "includefile" )==0) {
+                     /* TODO: handle relative paths */
+                     struct config_files ctmp;
+@@ -854,22 +853,20 @@ read_config(const char *filename,
+                     prev_curfilename = curfilename;
+                     read_config(cptr, line_handler, when);
+                     curfilename = prev_curfilename;
+-                    continue;
+                 } else if ( strcasecmp( token, "includesearch" )==0) {
+-                struct config_files ctmp;
+-                int len = strlen(cptr);
+-                const char *prev_curfilename;
+-                ctmp.fileHeader = cptr;
+-                ctmp.start = line_handler;
+-                ctmp.next = NULL;
+-                if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
+-                   cptr[len-5] = 0; /* chop off .conf */
+-                prev_curfilename = curfilename;
+-                read_config_files_of_type(when,&ctmp);
+-                curfilename = prev_curfilename;
+-                if ((len > 5) && (cptr[len-5] == 0))
+-                   cptr[len-5] = '.'; /* restore .conf */
+-                continue;
++                    struct config_files ctmp;
++                    int len = strlen(cptr);
++                    const char *prev_curfilename;
++                    ctmp.fileHeader = cptr;
++                    ctmp.start = line_handler;
++                    ctmp.next = NULL;
++                    if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
++                       cptr[len-5] = 0; /* chop off .conf */
++                    prev_curfilename = curfilename;
++                    read_config_files_of_type(when,&ctmp);
++                    curfilename = prev_curfilename;
++                    if ((len > 5) && (cptr[len-5] == 0))
++                       cptr[len-5] = '.'; /* restore .conf */
+                 } else {
+                     if (when != PREMIB_CONFIG && 
+ 	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+commit 3d3ec022943fd87ded844b9702d708b405d708c5
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Thu Jul 29 10:47:14 2010 +0000
+
+    Return an indication of whether config files are actually processed.
+    Report problems with failing to include config files.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19261 06827809-a52a-0410-b366-d66718629de
+
+diff -ur old/include/net-snmp/library/read_config.h net-snmp-5.5/include/net-snmp/library/read_config.h
+--- old/include/net-snmp/library/read_config.h	2009-04-21 11:38:45.000000000 +0200
++++ net-snmp-5.5/include/net-snmp/library/read_config.h	2013-07-03 17:41:58.459507133 +0200
+@@ -46,8 +46,8 @@
+     int             netsnmp_config(char *);     /* parse a simple line: token=values */
+     void            netsnmp_config_remember(char *);    /* process later, during snmp_init() */
+     void            netsnmp_config_process_memories(void);      /* run all memories through parser */
+-    void            read_config(const char *, struct config_line *, int);
+-    void            read_config_files(int);
++    int             read_config(const char *, struct config_line *, int);
++    int             read_config_files(int);
+     void            free_config(void);
+ #if !defined(__GNUC__) || __GNUC__ < 2 || (__GNUC__ == 2&& __GNUC_MINOR__ < 8)
+     void            netsnmp_config_error(const char *, ...);
+@@ -64,7 +64,7 @@
+     char           *skip_token(char *);
+     char           *copy_nword(char *, char *, int);
+     char           *copy_word(char *, char *);  /* do not use */
+-    void            read_config_with_type(const char *, const char *);
++    int             read_config_with_type(const char *, const char *);
+     char           *read_config_save_octet_string(char *saveto,
+                                                   u_char * str,
+                                                   size_t len);
+diff -ur old/snmplib/read_config.c net-snmp-5.5/snmplib/read_config.c
+--- old/snmplib/read_config.c	2013-07-03 17:41:42.000000000 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-07-03 17:48:52.106218403 +0200
+@@ -458,8 +458,8 @@
+ }
+ #endif
+ 
+-int             linecount;
+-const char     *curfilename;
++int             linecount,    prev_linecount;
++const char     *curfilename, *prev_filename;
+ 
+ struct config_line *
+ read_config_get_handlers(const char *type)
+@@ -472,22 +472,23 @@
+     return NULL;
+ }
+ 
+-void
++int
+ read_config_with_type_when(const char *filename, const char *type, int when)
+ {
+     struct config_line *ctmp = read_config_get_handlers(type);
+     if (ctmp)
+-        read_config(filename, ctmp, when);
++        return read_config(filename, ctmp, when);
+     else
+         DEBUGMSGTL(("read_config",
+                     "read_config: I have no registrations for type:%s,file:%s\n",
+                     type, filename));
++    return SNMPERR_GENERR;     /* No config files read */
+ }
+ 
+-void
++int
+ read_config_with_type(const char *filename, const char *type)
+ {
+-    read_config_with_type_when(filename, type, EITHER_CONFIG);
++    return read_config_with_type_when(filename, type, EITHER_CONFIG);
+ }
+ 
+ 
+@@ -712,8 +713,13 @@
+  *
+  * For each match, check that <when> is the designated time for the
+  * <line_handler> function to be executed before processing the line.
++ *
++ * Returns SNMPERR_SUCCESS if the file is processed successfully.
++ * Returns SNMPERR_GENERR  if it cannot.
++ *    Note that individual config token errors do not trigger SNMPERR_GENERR
++ *    It's only if the whole file cannot be processed for some reason.
+  */
+-void
++int
+ read_config(const char *filename,
+             struct config_line *line_handler, int when)
+ {
+@@ -722,7 +728,7 @@
+     FILE           *ifile;
+     char            line[STRINGMAX], token[STRINGMAX];
+     char           *cptr;
+-    int             i;
++    int             i, ret;
+     struct config_line *lptr;
+ 
+     linecount = 0;
+@@ -748,20 +754,20 @@
+ #else                           /* defined(ENOENT) || defined(EACCES) */
+             snmp_log_perror(filename);
+ #endif                          /* ENOENT */
+-        return;
++        return SNMPERR_GENERR;
+     }
+ 
+ #define CONFIG_MAX_FILES 4096
+     if (files > CONFIG_MAX_FILES) {
+         netsnmp_config_error("maximum conf file count (%d) exceeded\n",
+                              CONFIG_MAX_FILES);
+-        return;
++        return SNMPERR_GENERR;
+     }
+ #define CONFIG_MAX_RECURSE_DEPTH 16
+     if (depth > CONFIG_MAX_RECURSE_DEPTH) {
+         netsnmp_config_error("nested include depth > %d\n",
+                              CONFIG_MAX_RECURSE_DEPTH);
+-        return;
++        return SNMPERR_GENERR;
+     }
+     ++files;
+     ++depth;
+@@ -817,54 +823,64 @@
+                     if (when != PREMIB_CONFIG && 
+ 	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+ 				                NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
+-	                netsnmp_config_warn("Ambiguous token '%s' - use includeDir (or includeFile) instead.", token);
++	                netsnmp_config_warn("Ambiguous token '%s' - use 'includeDir' (or 'includeFile') instead.", token);
+                     }
+                 } else if ( strcasecmp( token, "includedir" )==0) {
+                     DIR *d;
+                     struct dirent *entry;
+                     char  filename[SNMP_MAXPATH];
+                     int   len;
+-                    const char *prev_curfilename;
+ 
+-                    if ((d=opendir(cptr)) == NULL )
++                    if ((d=opendir(cptr)) == NULL ) {
++                        if (when != PREMIB_CONFIG)
++                            netsnmp_config_error("Can't open include dir '%s'.", cptr);
+                         continue;
+-                    prev_curfilename = curfilename;
++                    }
++                    prev_filename  = curfilename;
++                    prev_linecount = linecount;
+                     while ((entry = readdir( d )) != NULL ) {
+                         if ( entry->d_name && entry->d_name[0] != '.') {
+                             len = NAMLEN(entry);
+                             if ((len > 5) && (strcmp(&(entry->d_name[len-5]),".conf") == 0)) {
+                                 snprintf(filename, SNMP_MAXPATH, "%s/%s",
+                                          cptr, entry->d_name);
+-                                read_config(filename, line_handler, when);
++                                (void)read_config(filename, line_handler, when);
+                             }
+                         }
+                     }
+                     closedir(d);
+-                    curfilename = prev_curfilename;
++                    curfilename = prev_filename;
++                    linecount   = prev_linecount;
+                 } else if ( strcasecmp( token, "includefile" )==0) {
+                     /* TODO: handle relative paths */
+                     struct config_files ctmp;
+-                    const char *prev_curfilename;
+                     ctmp.fileHeader = cptr;
+                     ctmp.start = line_handler;
+                     ctmp.next = NULL;
+-                    prev_curfilename = curfilename;
+-                    read_config(cptr, line_handler, when);
+-                    curfilename = prev_curfilename;
++                    prev_filename  = curfilename;
++                    prev_linecount = linecount;
++                    ret = read_config(cptr, line_handler, when);
++                    curfilename = prev_filename;
++                    linecount   = prev_linecount;
++                    if ((ret != SNMPERR_SUCCESS) && (when != PREMIB_CONFIG))
++                        netsnmp_config_error("Included file '%s' not found.", cptr);
+                 } else if ( strcasecmp( token, "includesearch" )==0) {
+                     struct config_files ctmp;
+                     int len = strlen(cptr);
+-                    const char *prev_curfilename;
+                     ctmp.fileHeader = cptr;
+                     ctmp.start = line_handler;
+                     ctmp.next = NULL;
+                     if ((len > 5) && (strcmp(&cptr[len-5],".conf") == 0))
+                        cptr[len-5] = 0; /* chop off .conf */
+-                    prev_curfilename = curfilename;
+-                    read_config_files_of_type(when,&ctmp);
+-                    curfilename = prev_curfilename;
++                    prev_filename  = curfilename;
++                    prev_linecount = linecount;
++                    ret = read_config_files_of_type(when,&ctmp);
++                    curfilename = prev_filename;
++                    linecount   = prev_linecount;
+                     if ((len > 5) && (cptr[len-5] == 0))
+                        cptr[len-5] = '.'; /* restore .conf */
++                    if (( ret != SNMPERR_SUCCESS ) && (when != PREMIB_CONFIG))
++		        netsnmp_config_error("Included config '%s' not found.", cptr);
+                 } else {
+                     if (when != PREMIB_CONFIG && 
+ 	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+@@ -887,7 +903,7 @@
+     }
+     fclose(ifile);
+     --depth;
+-    return;
++    return SNMPERR_SUCCESS;
+ 
+ }                               /* end read_config() */
+ 
+@@ -905,15 +921,21 @@
+                 (*(ltmp->free_func)) ();
+ }
+ 
+-void
++/*
++ * Return SNMPERR_SUCCESS if any config files are processed
++ * Return SNMPERR_GENERR if _no_ config files are processed
++ *    Whether this is actually an error is left to the application
++ */
++int
+ read_configs_optional(const char *optional_config, int when)
+ {
+     char *newp, *cp, *st = NULL;
++    int              ret = SNMPERR_GENERR;
+     char *type = netsnmp_ds_get_string(NETSNMP_DS_LIBRARY_ID, 
+ 				       NETSNMP_DS_LIB_APPTYPE);
+ 
+     if ((NULL == optional_config) || (NULL == type))
+-        return;
++        return ret;
+ 
+     DEBUGMSGTL(("read_configs_optional",
+                 "reading optional configuration tokens for %s\n", type));
+@@ -929,12 +951,13 @@
+         } else {
+             DEBUGMSGTL(("read_config:opt",
+                         "Reading optional config file: \"%s\"\n", cp));
+-            read_config_with_type_when(cp, type, when);
++            if ( read_config_with_type_when(cp, type, when) == SNMPERR_SUCCESS )
++                ret = SNMPERR_SUCCESS;
+         }
+         cp = strtok_r(NULL, ",", &st);
+     }
+     free(newp);
+-    
++    return ret;
+ }
+ 
+ void
+@@ -949,17 +972,17 @@
+     DEBUGMSGTL(("read_config", "reading normal configuration tokens\n"));
+ 
+     if ((NULL != optional_config) && (*optional_config == '-')) {
+-        read_configs_optional(++optional_config, NORMAL_CONFIG);
++        (void)read_configs_optional(++optional_config, NORMAL_CONFIG);
+         optional_config = NULL; /* clear, so we don't read them twice */
+     }
+ 
+-    read_config_files(NORMAL_CONFIG);
++    (void)read_config_files(NORMAL_CONFIG);
+ 
+     /*
+      * do this even when the normal above wasn't done 
+      */
+     if (NULL != optional_config)
+-        read_configs_optional(optional_config, NORMAL_CONFIG);
++        (void)read_configs_optional(optional_config, NORMAL_CONFIG);
+ 
+     netsnmp_config_process_memories_when(NORMAL_CONFIG, 1);
+ 
+@@ -981,14 +1004,14 @@
+     DEBUGMSGTL(("read_config", "reading premib configuration tokens\n"));
+ 
+     if ((NULL != optional_config) && (*optional_config == '-')) {
+-        read_configs_optional(++optional_config, PREMIB_CONFIG);
++        (void)read_configs_optional(++optional_config, PREMIB_CONFIG);
+         optional_config = NULL; /* clear, so we don't read them twice */
+     }
+ 
+-    read_config_files(PREMIB_CONFIG);
++    (void)read_config_files(PREMIB_CONFIG);
+ 
+     if (NULL != optional_config)
+-        read_configs_optional(optional_config, PREMIB_CONFIG);
++        (void)read_configs_optional(optional_config, PREMIB_CONFIG);
+ 
+     netsnmp_config_process_memories_when(PREMIB_CONFIG, 0);
+ 
+@@ -1126,8 +1149,12 @@
+ 
+ /**
+  * utility routine for read_config_files
++ *
++ * Return SNMPERR_SUCCESS if any config files are processed
++ * Return SNMPERR_GENERR if _no_ config files are processed
++ *    Whether this is actually an error is left to the application
+  */
+-static void
++static int
+ read_config_files_in_path(const char *path, struct config_files *ctmp,
+                           int when, const char *perspath, const char *persfile)
+ {
+@@ -1135,9 +1162,10 @@
+     char            configfile[300];
+     char           *cptr1, *cptr2, *envconfpath;
+     struct stat     statbuf;
++    int             ret = SNMPERR_GENERR;
+ 
+     if ((NULL == path) || (NULL == ctmp))
+-        return;
++        return SNMPERR_GENERR;
+ 
+     envconfpath = strdup(path);
+ 
+@@ -1204,18 +1232,21 @@
+                     DEBUGMSGTL(("read_config_files",
+                                 "old config file found: %s, parsing\n",
+                                 configfile));
+-                    read_config(configfile, ctmp->start, when);
++                    if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++                        ret = SNMPERR_SUCCESS;
+                 }
+             }
+         }
+         snprintf(configfile, sizeof(configfile),
+                  "%s/%s.conf", cptr2, ctmp->fileHeader);
+         configfile[ sizeof(configfile)-1 ] = 0;
+-        read_config(configfile, ctmp->start, when);
++        if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++            ret = SNMPERR_SUCCESS;
+         snprintf(configfile, sizeof(configfile),
+                  "%s/%s.local.conf", cptr2, ctmp->fileHeader);
+         configfile[ sizeof(configfile)-1 ] = 0;
+-        read_config(configfile, ctmp->start, when);
++        if (read_config(configfile, ctmp->start, when) == SNMPERR_SUCCESS)
++            ret = SNMPERR_SUCCESS;
+ 
+         if(done)
+             break;
+@@ -1223,6 +1254,7 @@
+         cptr2 = ++cptr1;
+     }
+     SNMP_FREE(envconfpath);
++    return ret;
+ }
+ 
+ /*******************************************************************-o-******
+@@ -1259,6 +1291,7 @@
+ {
+     const char     *confpath, *persfile, *envconfpath;
+     char           *perspath;
++    int             ret = SNMPERR_GENERR;
+ 
+     if (netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                NETSNMP_DS_LIB_DONT_PERSIST_STATE)
+@@ -1284,25 +1317,30 @@
+              * persistent path can change via conf file. Then get the
+              * current persistent directory, and read files there.
+              */
+-            read_config_files_in_path(confpath, ctmp, when, perspath,
+-                                      persfile);
++            if (read_config_files_in_path(confpath, ctmp, when, perspath,
++                                      persfile) == SNMPERR_SUCCESS)
++                ret = SNMPERR_SUCCESS;
+             perspath = get_persistent_directory();
+-            read_config_files_in_path(perspath, ctmp, when, perspath,
+-                                      persfile);
++            if (read_config_files_in_path(perspath, ctmp, when, perspath,
++                                      persfile) == SNMPERR_SUCCESS)
++                ret = SNMPERR_SUCCESS;
+         }
+         else {
+             /*
+              * only read path specified by user
+              */
+-            read_config_files_in_path(envconfpath, ctmp, when, perspath,
+-                                      persfile);
++            if (read_config_files_in_path(envconfpath, ctmp, when, perspath,
++                                      persfile) == SNMPERR_SUCCESS)
++                ret = SNMPERR_SUCCESS;
+         }
++    return ret;
+ }
+ 
+-void
++int
+ read_config_files(int when) {
+ 
+     struct config_files *ctmp = config_files;
++    int                  ret  = SNMPERR_GENERR;
+ 
+     config_errors = 0;
+ 
+@@ -1313,14 +1351,15 @@
+      * read all config file types 
+      */
+     for (; ctmp != NULL; ctmp = ctmp->next) {
+-        read_config_files_of_type(when, ctmp);
++        if ( read_config_files_of_type(when, ctmp) == SNMPERR_SUCCESS )
++            ret = SNMPERR_SUCCESS;
+     }
+ 
+     if (config_errors) {
+         snmp_log(LOG_ERR, "net-snmp: %d error(s) in config file(s)\n",
+                  config_errors);
+     }
+-
++    return ret;
+ }
+ 
+ void
+commit 32e2d4dbdf907d68d3a7ea0ed0c6352ce476ad4a
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Thu Jul 29 11:13:54 2010 +0000
+
+    Guard against blank 'include*' lines.
+    Handle relative 'includeFile' paths
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19262 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index 377098d..af76269 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -830,9 +830,14 @@ read_config(const char *filename,
+                 } else if ( strcasecmp( token, "includedir" )==0) {
+                     DIR *d;
+                     struct dirent *entry;
+-                    char  filename[SNMP_MAXPATH];
++                    char  fname[SNMP_MAXPATH];
+                     int   len;
+ 
++                    if (cptr == NULL) {
++                        if (when != PREMIB_CONFIG)
++		            netsnmp_config_error("Blank line following %s token.", token);
++                        continue;
++                    }
+                     if ((d=opendir(cptr)) == NULL ) {
+                         if (when != PREMIB_CONFIG)
+                             netsnmp_config_error("Can't open include dir '%s'.", cptr);
+@@ -844,9 +849,9 @@ read_config(const char *filename,
+                         if ( entry->d_name && entry->d_name[0] != '.') {
+                             len = NAMLEN(entry);
+                             if ((len > 5) && (strcmp(&(entry->d_name[len-5]),".conf") == 0)) {
+-                                snprintf(filename, SNMP_MAXPATH, "%s/%s",
++                                snprintf(fname, SNMP_MAXPATH, "%s/%s",
+                                          cptr, entry->d_name);
+-                                (void)read_config(filename, line_handler, when);
++                                (void)read_config(fname, line_handler, when);
+                             }
+                         }
+                     }
+@@ -854,21 +859,41 @@ read_config(const char *filename,
+                     curfilename = prev_filename;
+                     linecount   = prev_linecount;
+                 } else if ( strcasecmp( token, "includefile" )==0) {
+-                    /* TODO: handle relative paths */
+-                    struct config_files ctmp;
+-                    ctmp.fileHeader = cptr;
+-                    ctmp.start = line_handler;
+-                    ctmp.next = NULL;
++                    char  fname[SNMP_MAXPATH], *cp;
++
++                    if (cptr == NULL) {
++                        if (when != PREMIB_CONFIG)
++		            netsnmp_config_error("Blank line following %s token.", token);
++                        continue;
++                    }
++                    if ( cptr[0] == '/' ) {
++                        strncpy(fname, cptr, SNMP_MAXPATH);
++                        fname[SNMP_MAXPATH-1]='\0';
++                    } else {
++                        strncpy(fname, filename, SNMP_MAXPATH);
++                        fname[SNMP_MAXPATH-1]='\0';
++                        cp = strrchr(fname, '/');
++                        *(++cp) = '\0';
++                        strncat(fname, cptr, SNMP_MAXPATH-strlen(fname));
++                        fname[SNMP_MAXPATH-1]='\0';
++                    }
+                     prev_filename  = curfilename;
+                     prev_linecount = linecount;
+-                    ret = read_config(cptr, line_handler, when);
++                    ret = read_config(fname, line_handler, when);
+                     curfilename = prev_filename;
+                     linecount   = prev_linecount;
+                     if ((ret != SNMPERR_SUCCESS) && (when != PREMIB_CONFIG))
+-                        netsnmp_config_error("Included file '%s' not found.", cptr);
++                        netsnmp_config_error("Included file '%s' not found.", fname);
+                 } else if ( strcasecmp( token, "includesearch" )==0) {
+                     struct config_files ctmp;
+-                    int len = strlen(cptr);
++                    int len;
++
++                    if (cptr == NULL) {
++                        if (when != PREMIB_CONFIG)
++		            netsnmp_config_error("Blank line following %s token.", token);
++                        continue;
++                    }
++                    len = strlen(cptr);
+                     ctmp.fileHeader = cptr;
+                     ctmp.start = line_handler;
+                     ctmp.next = NULL;
+commit 3fe36f7ad71c08e1286ce8e487e9352e27cd96cc
+Author: Ronald Wahl <rwa-co@users.sourceforge.net>
+Date:   Tue Aug 30 10:12:11 2011 -0700
+
+    CHANGES: libnetsnmp: PATCH 3394586: from rwa-co: file descriptor leak in read_config (+fix)
+    
+    Signed-off-by: Wes Hardaker <hardaker@users.sourceforge.net>
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index 62be6e2..86f2391 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -733,6 +733,9 @@ read_config(const char *filename,
+     int             i, ret;
+     struct config_line *lptr;
+ 
++    // reset file counter when recursion depth is 0
++    if (depth == 0) files = 0;
++
+     linecount = 0;
+     curfilename = filename;
+ 
+@@ -763,12 +766,14 @@ read_config(const char *filename,
+     if (files > CONFIG_MAX_FILES) {
+         netsnmp_config_error("maximum conf file count (%d) exceeded\n",
+                              CONFIG_MAX_FILES);
++	fclose(ifile);
+         return SNMPERR_GENERR;
+     }
+ #define CONFIG_MAX_RECURSE_DEPTH 16
+     if (depth > CONFIG_MAX_RECURSE_DEPTH) {
+         netsnmp_config_error("nested include depth > %d\n",
+                              CONFIG_MAX_RECURSE_DEPTH);
++	fclose(ifile);
+         return SNMPERR_GENERR;
+     }
+     ++files;
+commit 089bcb360aa26790ad2a8ceddf583b7ba5ddfd48
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jan 4 10:50:56 2012 +0100
+
+    Added strrchr return value check, just to be sure.
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index 86f2391..2b13560 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -880,6 +880,8 @@ read_config(const char *filename,
+                         strncpy(fname, filename, SNMP_MAXPATH);
+                         fname[SNMP_MAXPATH-1]='\0';
+                         cp = strrchr(fname, '/');
++                        if (!cp)
++                            fname[0] = '\0';
+                         *(++cp) = '\0';
+                         strncat(fname, cptr, SNMP_MAXPATH-strlen(fname));
+                         fname[SNMP_MAXPATH-1]='\0';
+commit 7e890dad95f566069ee280215a4fea3f0e2e3980
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Thu Jan 5 16:38:50 2012 +0100
+
+    Avoid a SIGSEGV if cp == NULL. This is a follow-up for commit 089bcb360aa26790ad2a8ceddf583b7ba5ddfd48.
+
+diff --git a/snmplib/read_config.c b/snmplib/read_config.c
+index 5b969b0..7044c1d 100644
+--- a/snmplib/read_config.c
++++ b/snmplib/read_config.c
+@@ -879,7 +879,8 @@ read_config(const char *filename,
+                         cp = strrchr(fname, '/');
+                         if (!cp)
+                             fname[0] = '\0';
+-                        *(++cp) = '\0';
++                        else
++                            *(++cp) = '\0';
+                         strncat(fname, cptr, SNMP_MAXPATH-strlen(fname));
+                         fname[SNMP_MAXPATH-1]='\0';
+                     }
+                     prev_filename  = curfilename;
+commit f33d33615d6d85d0073726473c4146cbcdf11ced
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue Jan 17 14:30:07 2012 +0100
+
+    Fixed sigsegv when empty config line is parsed.
+
+diff -ur old/snmplib/read_config.c net-snmp-5.5/snmplib/read_config.c
+--- old/snmplib/read_config.c	2013-07-04 09:12:31.000000000 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-07-04 09:12:52.372806700 +0200
+@@ -570,7 +570,14 @@
+     strncpy(buf, line, STRINGMAX);
+     buf[STRINGMAX - 1] = '\0';
+     cptr = strtok_r(buf, SNMP_CONFIG_DELIMETERS, &st);
+-    if (cptr && cptr[0] == '[') {
++    if (!cptr) {
++        char tmpbuf[STRINGMAX];
++        snprintf(tmpbuf, sizeof(tmpbuf), "Wrong format: %s", line);
++        tmpbuf[ sizeof(tmpbuf)-1 ] = '\0';
++        config_perror(tmpbuf);
++        return SNMPERR_GENERR;
++    }
++    if (cptr[0] == '[') {
+         if (cptr[strlen(cptr) - 1] != ']') {
+ 	    netsnmp_config_error("no matching ']' for type %s.", cptr + 1);
+             return SNMPERR_GENERR;
+commit 79e8dd2a372a20ee97de1c7107b59ad4aaf89a36
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jul 4 10:47:29 2013 +0200
+
+    Update configuration documentation with includeFile and includeDir.
+
+diff --git a/man/snmp_config.5.def b/man/snmp_config.5.def
+index 97e454c..46b3867 100644
+--- a/man/snmp_config.5.def
++++ b/man/snmp_config.5.def
+@@ -179,7 +179,7 @@ during normal configuration file processing.:
+ .RS
+ .nf
+ # include site specific config
+-include site.conf
++includeFile site.conf
+ .RE
+ .PP
+ This will search every directory in the configuration path for files
+@@ -187,6 +187,20 @@ named site.conf, and will process those files before returning to the
+ processing of the original file. Note that if '.conf' is omitted,
+ it will be appended. That is, all configuration files must end
+ in '.conf'.
++.PP
++.RS
++.nf
++# include a all *.conf files in a directory
++includeDir /etc/snmp/config.d
++.RE
++.PP
++This will search specified directory for all files with '.conf'
++suffix and process them as if they were included using includeFile
++directive. The configuration files are not processed in any particular
++order.
++.PP
++The specified directory is relative to currently processed configuration
++file path. Use absolute path to be sure the correct directory is used.
+ .SH "API INTERFACE"
+ .PP
+ Information about writing C code that makes use of this system in
+commit 4c4a4281fd5b2c6156c5120f9a2e8b708f466ccd
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jul 4 11:08:48 2013 +0200
+
+    includeDir is not predictable with relative paths
+
+diff --git a/man/snmp_config.5.def b/man/snmp_config.5.def
+index 46b3867..9dfd836 100644
+--- a/man/snmp_config.5.def
++++ b/man/snmp_config.5.def
+@@ -199,8 +199,7 @@ suffix and process them as if they were included using includeFile
+ directive. The configuration files are not processed in any particular
+ order.
+ .PP
+-The specified directory is relative to currently processed configuration
+-file path. Use absolute path to be sure the correct directory is used.
++The specified directory must be absolute directory path.
+ .SH "API INTERFACE"
+ .PP
+ Information about writing C code that makes use of this system in
+
+commit 9c8438f4d3ddc3d17e15b74ecd4552e8f5b52854
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Mon Oct 25 16:05:13 2010 +0000
+
+    Don't attempt to process unrecognised "ignore*" directives.
+        Pass these through to the appropriate registered config handlers (if any)
+
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-6-patches@19552 06827809-a52a-0410-b366-d66718629ded
+diff -up net-snmp-5.5/snmplib/read_config.ctst net-snmp-5.5/snmplib/read_config.c
+--- net-snmp-5.5/snmplib/read_config.ctst	2013-07-08 14:39:11.849517837 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-07-08 14:40:19.070297844 +0200
+@@ -841,6 +841,7 @@ read_config_new(const char *filename,
+ 	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+ 				                NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
+ 	                netsnmp_config_warn("Ambiguous token '%s' - use 'includeDir' (or 'includeFile') instead.", token);
++	                continue;
+                     }
+                 } else if ( strcasecmp( token, "includedir" )==0) {
+                     DIR *d;
+@@ -873,6 +874,7 @@ read_config_new(const char *filename,
+                     closedir(d);
+                     curfilename = prev_filename;
+                     linecount   = prev_linecount;
++                    continue;
+                 } else if ( strcasecmp( token, "includefile" )==0) {
+                     char  fname[SNMP_MAXPATH], *cp;
+ 
+@@ -902,6 +904,7 @@ read_config_new(const char *filename,
+                     linecount   = prev_linecount;
+                     if ((ret != SNMPERR_SUCCESS) && (when != PREMIB_CONFIG))
+                         netsnmp_config_error("Included file '%s' not found.", fname);
++                    continue;
+                 } else if ( strcasecmp( token, "includesearch" )==0) {
+                     struct config_files ctmp;
+                     int len;
+@@ -926,14 +929,10 @@ read_config_new(const char *filename,
+                        cptr[len-5] = '.'; /* restore .conf */
+                     if (( ret != SNMPERR_SUCCESS ) && (when != PREMIB_CONFIG))
+ 		        netsnmp_config_error("Included config '%s' not found.", cptr);
++                    continue;
+                 } else {
+-                    if (when != PREMIB_CONFIG && 
+-	                !netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+-				                NETSNMP_DS_LIB_NO_TOKEN_WARNINGS)) {
+-	                netsnmp_config_warn("Unknown include token: %s.", token);
+-	            }
++                    lptr = line_handler;
+                 }
+-                continue;
+             } else {
+                 lptr = line_handler;
+             }
+diff -up net-snmp-5.5/snmplib/read_config.c.orig net-snmp-5.5/snmplib/read_config.c
+--- net-snmp-5.5/snmplib/read_config.c.orig	2013-08-14 15:41:28.692041547 +0200
++++ net-snmp-5.5/snmplib/read_config.c	2013-08-14 15:41:36.436012184 +0200
+@@ -1358,7 +1358,7 @@ read_config_files_of_type(int when, stru
+                                NETSNMP_DS_LIB_DONT_PERSIST_STATE)
+         || netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                   NETSNMP_DS_LIB_DISABLE_CONFIG_LOAD)
+-        || (NULL == ctmp)) return;
++        || (NULL == ctmp)) return ret;
+ 
+     /*
+      * these shouldn't change

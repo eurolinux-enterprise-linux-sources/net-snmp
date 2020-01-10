@@ -1,0 +1,28 @@
+786931 - sysObjectID cannot be set to an OID value with a length greater than 10.
+
+commit beff228a976472e53d67e56f7e820cb3eb411639
+Author: Magnus Fromreide <magfr@users.sourceforge.net>
+Date:   Mon Oct 11 18:23:22 2010 +0000
+
+    CHANGES: snmpd: Update the length of sysObjectID as well as the data when it is set from a configuration file.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-6-patches@19404 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/agent/mibgroup/mibII/system_mib.c b/agent/mibgroup/mibII/system_mib.c
+index 3939952..047f768 100644
+--- a/agent/mibgroup/mibII/system_mib.c
++++ b/agent/mibgroup/mibII/system_mib.c
+@@ -172,8 +172,10 @@ system_parse_config_sysObjectID(const char *token, char *cptr)
+     if (!read_objid(cptr, sysObjectID, &sysObjectIDLength)) {
+ 	netsnmp_config_error("sysobjectid token not a parsable OID:\n\t%s",
+ 			     cptr);
+-        memcpy(sysObjectID, version_sysoid, version_sysoid_len * sizeof(oid));
+-    }
++        sysObjectIDByteLength = version_sysoid_len  * sizeof(oid);
++        memcpy(sysObjectID, version_sysoid, sysObjectIDByteLength);
++    } else
++        sysObjectIDByteLength = sysObjectIDLength * sizeof(oid);
+ }
+ 
+ 

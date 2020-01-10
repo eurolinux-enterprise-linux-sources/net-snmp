@@ -1,0 +1,295 @@
+Bug 1195547 - snmpd crashed in _mfd_ipCidrRouteTable_get_values
+
+Backported from:
+
+commit 1e3bb6060be6156d3ff316c5a7e4fd7f05e37cff
+Author: Dave Shield <D.T.Shield@liverpool.ac.uk>
+Date:   Fri Jun 22 12:11:56 2012 +0100
+
+    NEWS: snmpd: BUG: 3532090: Fix high ifIndex values crashing hrDeviceDescr
+
+diff -up net-snmp-5.5/agent/mibgroup/host/hr_network.c.old net-snmp-5.5/agent/mibgroup/host/hr_network.c
+--- net-snmp-5.5/agent/mibgroup/host/hr_network.c.old	2008-10-21 23:10:43.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host/hr_network.c	2015-02-26 10:28:46.261029137 +0100
+@@ -189,17 +189,17 @@ var_hrnet(struct variable * vp,
+ #if defined( USING_IF_MIB_IFTABLE_IFTABLE_DATA_ACCESS_MODULE )
+ static char     HRN_name[16];
+ static netsnmp_interface_entry *HRN_ifnet;
+-#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_Next(a, b, c, d)
++#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_NextInt(a, b, c, d)
+ #elif defined(hpux11)
+ static char     HRN_name[MAX_PHYSADDR_LEN];
+ static nmapi_phystat HRN_ifnet;
+-#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_Next(a, b, c)
++#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_NextInt(a, b, c)
+ #else                           /* hpux11 */
+ static char     HRN_name[16];
+ #ifndef WIN32
+ static struct ifnet HRN_ifnet;
+ #endif /* WIN32 */
+-#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_Next(a, b, c, d)
++#define M_Interface_Scan_Next(a, b, c, d)	Interface_Scan_NextInt(a, b, c, d)
+ #endif
+ 
+ #ifdef hpux11
+@@ -222,7 +222,7 @@ Init_HR_Network(void)
+ int
+ Get_Next_HR_Network(void)
+ {
+-short    HRN_index;
++int      HRN_index;
+ #if !defined( solaris2) && ! defined( WIN32 )
+     if (M_Interface_Scan_Next(&HRN_index, HRN_name, &HRN_ifnet, NULL) == 0)
+         HRN_index = -1;
+@@ -232,6 +232,17 @@ short    HRN_index;
+     if (-1 == HRN_index)
+         return HRN_index;
+ 
++    /*
++     * If the index is greater than the shift registry space,
++     * this will overrun into the next device type block,
++     * potentially resulting in duplicate index values
++     * which may cause the agent to crash.
++     *   To avoid this, we silently drop interfaces greater
++     * than the shift registry size can handle.
++     */
++    if (HRN_index > (1 << HRDEV_TYPE_SHIFT ))
++        return -1;
++
+     return (HRDEV_NETWORK << HRDEV_TYPE_SHIFT) + HRN_index;
+ }
+ 
+diff -up net-snmp-5.5/agent/mibgroup/host_res.h.old net-snmp-5.5/agent/mibgroup/host_res.h
+--- net-snmp-5.5/agent/mibgroup/host_res.h.old	2007-05-29 01:30:21.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/host_res.h	2015-02-26 10:27:12.610763973 +0100
+@@ -67,8 +67,8 @@
+ #define	HRDEV_NVMEM	21
+ 
+ #define	HRDEV_TYPE_MAX	22      /* one greater than largest device type */
+-#define	HRDEV_TYPE_SHIFT  8
+-#define	HRDEV_TYPE_MASK 0xff
++#define	HRDEV_TYPE_SHIFT  16
++#define	HRDEV_TYPE_MASK 0xffff
+ 
+ typedef void    (*PFV) (void);
+ typedef int     (*PFI) (int);
+diff -up net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface.c.old net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface.c
+--- net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface.c.old	2015-02-26 10:27:05.963745152 +0100
++++ net-snmp-5.5/agent/mibgroup/if-mib/data_access/interface.c	2015-02-26 10:27:12.611763975 +0100
+@@ -379,6 +379,21 @@ int
+ Interface_Scan_Next(short *index, char *name, netsnmp_interface_entry **entry,
+                     void *dc)
+ {
++    int returnIndex = 0;
++    int ret;
++    if (index)
++        returnIndex = *index;
++
++    ret = Interface_Scan_NextInt( &returnIndex, name, entry, dc );
++    if (index)
++        *index = (returnIndex & 0x8fff);
++    return ret;
++}
++
++int
++Interface_Scan_NextInt(int *index, char *name, netsnmp_interface_entry **entry,
++                    void *dc)
++{
+     if (NULL == e)
+         return 0;
+ 
+diff -up net-snmp-5.5/agent/mibgroup/mibII/interfaces.c.old net-snmp-5.5/agent/mibgroup/mibII/interfaces.c
+--- net-snmp-5.5/agent/mibgroup/mibII/interfaces.c.old	2015-02-26 10:27:05.762744583 +0100
++++ net-snmp-5.5/agent/mibgroup/mibII/interfaces.c	2015-02-26 10:27:12.612763978 +0100
+@@ -715,6 +715,14 @@ Interface_Scan_Next(short *Index,
+     return 0;
+ }
+ 
++int
++Interface_Scan_NextInt(int *Index,
++                    char *Name,
++                    struct ifnet *Retifnet, struct in_ifaddr *Retin_ifaddr)
++{
++    return 0;
++}
++
+ #else                           /* not USE_SYSCTL_IFLIST */
+ 
+         /*********************
+@@ -1840,6 +1848,22 @@ Interface_Scan_Next(short *Index,
+                     char *Name,
+                     struct ifnet *Retifnet, struct in_ifaddr *dummy)
+ {
++    int returnIndex = 0;
++    int ret;
++    if (Index)
++        returnIndex = *Index;
++
++    ret = Interface_Scan_NextInt( &returnIndex, Name, Retifnet, dummy );
++    if (Index)
++        *Index = (returnIndex & 0x8fff);
++    return ret;
++}
++
++int
++Interface_Scan_NextInt(int *Index,
++                    char *Name,
++                    struct ifnet *Retifnet, struct in_ifaddr *dummy)
++{
+     struct ifnet    ifnet;
+     register char  *cp;
+ 
+@@ -1905,11 +1929,11 @@ Interface_Scan_Next(short *Index,
+ int
+ Interface_Index_By_Name(char *Name, int Len)
+ {
+-    short           ifIndex = 0;
++    int             ifIndex = 0;
+     char            ifName[20];
+ 
+     Interface_Scan_Init();
+-    while (Interface_Scan_Next(&ifIndex, ifName, NULL, NULL)
++    while (Interface_Scan_NextInt(&ifIndex, ifName, NULL, NULL)
+            && strcmp(Name, ifName));
+     return ifIndex;
+ }
+@@ -1924,10 +1948,24 @@ Interface_Index_By_Name(char *Name, int
+ #endif
+ 
+ #if defined(hpux11)
+-
+ int
+ Interface_Scan_Next(short *Index, char *Name, nmapi_phystat * Retifnet)
+ {
++    int returnIndex = 0;
++    int ret;
++    if (Index)
++        returnIndex = *Index;
++
++    ret = Interface_Scan_NextInt( &returnIndex, Name, Retifnet );
++    if (Index)
++        *Index = (returnIndex & 0x8fff);
++    return ret;
++}
++
++
++int
++Interface_Scan_NextInt(int *Index, char *Name, nmapi_phystat * Retifnet)
++{
+     static nmapi_phystat *if_ptr = (nmapi_phystat *) 0;
+     int             count = Interface_Scan_Get_Count();
+     unsigned int    ulen;
+@@ -1962,12 +2000,30 @@ Interface_Scan_Next(short *Index, char *
+ }
+ 
+ #else                           /* hpux11 */
+-
+ int
+ Interface_Scan_Next(short *Index,
+                     char *Name,
+                     struct ifnet *Retifnet, struct in_ifaddr *Retin_ifaddr)
+ {
++    int returnIndex = 0;
++    int ret;
++    if (Index)
++        returnIndex = *Index;
++
++    ret = Interface_Scan_NextInt( &returnIndex, Name, Retifnet, Retin_ifaddr );
++    if (Index)
++        *Index = (returnIndex & 0x8fff);
++    return ret;
++}
++
++
++int
++
++int
++Interface_Scan_NextInt(int *Index,
++                    char *Name,
++                    struct ifnet *Retifnet, struct in_ifaddr *Retin_ifaddr)
++{
+     struct ifnet    ifnet;
+     struct in_ifaddr *ia, in_ifaddr;
+     short           has_ipaddr = 0;
+@@ -2081,10 +2137,10 @@ Interface_Scan_Next(short *Index,
+ static int
+ Interface_Scan_By_Index(int Index, char *Name, nmapi_phystat * Retifnet)
+ {
+-    short           i;
++    int           i;
+ 
+     Interface_Scan_Init();
+-    while (Interface_Scan_Next(&i, Name, Retifnet)) {
++    while (Interface_Scan_NextInt(&i, Name, Retifnet)) {
+         if (i == Index)
+             break;
+     }
+@@ -2101,10 +2157,10 @@ Interface_Scan_By_Index(int Index,
+                         struct ifnet *Retifnet,
+                         struct in_ifaddr *Retin_ifaddr)
+ {
+-    short           i;
++    int           i;
+ 
+     Interface_Scan_Init();
+-    while (Interface_Scan_Next(&i, Name, Retifnet, Retin_ifaddr)) {
++    while (Interface_Scan_NextInt(&i, Name, Retifnet, Retin_ifaddr)) {
+         if (i == Index)
+             break;
+     }
+@@ -2155,7 +2211,7 @@ Interface_Scan_Get_Count(void)
+         scan_time = time_now;
+         Interface_Scan_Init();
+         Interface_Count = 0;
+-        while (Interface_Scan_Next(NULL, NULL, NULL, NULL) != 0) {
++        while (Interface_Scan_NextInt(NULL, NULL, NULL, NULL) != 0) {
+             Interface_Count++;
+         }
+     }
+@@ -2166,7 +2222,7 @@ Interface_Scan_Get_Count(void)
+ static int
+ Interface_Get_Ether_By_Index(int Index, u_char * EtherAddr)
+ {
+-    short           i;
++    int             i;
+ #if !(defined(linux) || defined(netbsd1) || defined(bsdi2) || defined(openbsd2))
+     struct arpcom   arpcom;
+ #else                           /* is linux or netbsd1 */
+@@ -2191,7 +2247,7 @@ Interface_Get_Ether_By_Index(int Index,
+ 
+         Interface_Scan_Init();
+ 
+-        while (Interface_Scan_Next((short *) &i, NULL, NULL, NULL) != 0) {
++        while (Interface_Scan_NextIn(&i, NULL, NULL, NULL) != 0) {
+             if (i == Index)
+                 break;
+         }
+diff -up net-snmp-5.5/agent/mibgroup/mibII/interfaces.h.old net-snmp-5.5/agent/mibgroup/mibII/interfaces.h
+--- net-snmp-5.5/agent/mibgroup/mibII/interfaces.h.old	2009-04-26 16:34:37.000000000 +0200
++++ net-snmp-5.5/agent/mibgroup/mibII/interfaces.h	2015-02-26 10:27:12.612763978 +0100
+@@ -47,9 +47,12 @@ config_require(mibII/var_route)
+ #endif
+ #if defined(hpux11)
+      int             Interface_Scan_Next(short *, char *, nmapi_phystat *);
++     int             Interface_Scan_NextInt(int *, char *, nmapi_phystat *);
+ #else
+      int             Interface_Scan_Next(short *, char *, struct ifnet *,
+                                          struct in_ifaddr *);
++     int             Interface_Scan_NextInt(int *, char *, struct ifnet *,
++                                         struct in_ifaddr *);
+ #endif
+ 
+      void            init_interfaces(void);
+diff -up net-snmp-5.5/include/net-snmp/data_access/interface.h.old net-snmp-5.5/include/net-snmp/data_access/interface.h
+--- net-snmp-5.5/include/net-snmp/data_access/interface.h.old	2015-02-26 10:27:05.820744747 +0100
++++ net-snmp-5.5/include/net-snmp/data_access/interface.h	2015-02-26 10:27:12.613763981 +0100
+@@ -292,6 +292,9 @@ Interface_Scan_Init(void);
+ int
+ Interface_Scan_Next(short *index, char *name, netsnmp_interface_entry **entry,
+                     void *dc);
++int
++Interface_Scan_NextInt(int *index, char *name, netsnmp_interface_entry **entry,
++                    void *dc);
+ #endif
+ 
+ /**---------------------------------------------------------------------*/

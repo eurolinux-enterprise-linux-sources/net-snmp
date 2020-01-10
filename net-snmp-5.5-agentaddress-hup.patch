@@ -1,0 +1,20 @@
+968898 - net-snmpd crashes with "buffer overflow detected" while reading agentaddress
+
+Inspired by upstream commit b24ee7c909657db43bd8c5d8c01055ca0883c9cf.
+
+diff -up net-snmp-5.5/agent/agent_read_config.c.tmp net-snmp-5.5/agent/agent_read_config.c
+--- net-snmp-5.5/agent/agent_read_config.c.tmp	2013-07-04 14:12:04.120891388 +0200
++++ net-snmp-5.5/agent/agent_read_config.c	2013-07-04 14:13:07.496657603 +0200
+@@ -186,9 +186,10 @@ snmpd_set_agent_address(const char *toke
+         /*
+          * append to the older specification string 
+          */
+-        sprintf(buf, "%s,%s", ptr, cptr);
++        snprintf(buf, sizeof(buf), "%s,%s", ptr, cptr);
++        buf[sizeof(buf) - 1] = '\0';
+     } else {
+-        strcpy(buf, cptr);
++        strlcpy(buf, cptr, sizeof(buf));
+     }
+ 
+     DEBUGMSGTL(("snmpd_ports", "port spec: %s\n", buf));

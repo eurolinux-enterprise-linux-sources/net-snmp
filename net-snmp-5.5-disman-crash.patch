@@ -1,0 +1,79 @@
+607080  - [6.0] snmpd fails to start up due to segfault
+
+Source: upstream, SVN rev. 17852 + git commit eb217146fd54036ea4202bfef78bbf774d7e382d
+
+
+===================================================================
+--- a/agent/mibgroup/disman/schedule/schedCore.c	(revision 17851)
++++ b/agent/mibgroup/disman/schedule/schedCore.c	(revision 17852)
+@@ -449,13 +449,15 @@
+      */
+     if (schedOwner) {
+         memcpy(entry->schedOwner, schedOwner, strlen(schedOwner));
++        netsnmp_tdata_row_add_index(row, ASN_OCTET_STR,
++                           entry->schedOwner, strlen(schedOwner));
+     }
++    else
++        netsnmp_tdata_row_add_index(row, ASN_OCTET_STR, "", 0 );
++
+     memcpy(    entry->schedName,  schedName,  strlen(schedName));
+     netsnmp_tdata_row_add_index(row, ASN_OCTET_STR,
+-                                (entry->schedOwner || ""),
+-                                ((schedOwner) ? strlen(schedOwner) : 0));
+-    netsnmp_tdata_row_add_index(row, ASN_OCTET_STR,
+-                                entry->schedName,  strlen(schedName));
++                           entry->schedName,  strlen(schedName));
+     /*
+      * Set the (non-zero) default values in the row data structure.
+      */
+
+commit eb217146fd54036ea4202bfef78bbf774d7e382d
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Jan 18 15:23:10 2012 +0100
+
+    Free previously allocated memory on errors.
+
+diff --git a/agent/mibgroup/disman/event/mteTrigger.c b/agent/mibgroup/disman/event/mteTrigger.c
+index 8dc1784..bb585ed 100644
+--- a/agent/mibgroup/disman/event/mteTrigger.c
++++ b/agent/mibgroup/disman/event/mteTrigger.c
+@@ -247,6 +247,7 @@ mteTrigger_run( unsigned int reg, void *clientarg)
+         DEBUGMSGTL(( "disman:event:trigger:monitor", "Trigger query (%s) failed: %d\n",
+                            (( entry->flags & MTE_TRIGGER_FLAG_VWILD ) ? "walk" : "get"), n));
+         _mteTrigger_failure( "failed to run mteTrigger query" );
++        snmp_free_varbind(var);
+         return;
+     }
+ 
+@@ -291,6 +292,7 @@ mteTrigger_run( unsigned int reg, void *clientarg)
+                 if (!vtmp) {
+                     _mteTrigger_failure(
+                           "failed to create mteTrigger temp varbind");
++                    snmp_free_varbind(var);
+                     return;
+                 }
+                 vtmp->type = ASN_NULL;
+@@ -328,6 +330,7 @@ mteTrigger_run( unsigned int reg, void *clientarg)
+                     if (!vtmp) {
+                         _mteTrigger_failure(
+                                  "failed to create mteTrigger temp varbind");
++                        snmp_free_varbind(var);
+                         return;
+                     }
+                     vtmp->type = ASN_NULL;
+@@ -369,6 +372,7 @@ mteTrigger_run( unsigned int reg, void *clientarg)
+                 if (!vtmp) {
+                     _mteTrigger_failure(
+                              "failed to create mteTrigger temp varbind");
++                    snmp_free_varbind(var);
+                     return;
+                 }
+                 vtmp->type = ASN_NULL;
+@@ -704,6 +708,7 @@ mteTrigger_run( unsigned int reg, void *clientarg)
+                         if (!vtmp) {
+                             _mteTrigger_failure(
+                                   "failed to create mteTrigger discontinuity varbind");
++                            snmp_free_varbind(dvar);
+                             return;
+                         }
+                         snmp_set_var_objid(vtmp, entry->mteDeltaDiscontID,

@@ -1,0 +1,94 @@
+874440 - net-snmp does not work in FIPS mode
+
+Three upstream commits are here:
+
+commit dde3a35baaeb683cf1441a16a15441f8b456c520
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Mon Nov 12 15:45:27 2012 +0100
+
+    CHANGES: snmplib: Fixed crash when MD5 hash is not supported by OpenSSL.
+
+commit dd53ffbafeb31cde616a89949e70e3d5fe0cc1b3
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Mon Nov 12 15:46:43 2012 +0100
+
+    Fall back to SHA-1 if MD5 is not available.
+    On paranoid systems where MD5 is disabled use SHA-1 instead of MD5 and don't crash.
+
+commit 743cb66718904979f55895472501584c30c66f10
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Mon Nov 12 15:49:15 2012 +0100
+
+    Fixed crash when MD5 and/or SHA-1 hash is not supported by OpenSSL.
+
+diff -up net-snmp-5.5/snmplib/keytools.c.fips net-snmp-5.5/snmplib/keytools.c
+--- net-snmp-5.5/snmplib/keytools.c.fips	2009-04-23 17:58:53.000000000 +0200
++++ net-snmp-5.5/snmplib/keytools.c	2013-09-05 13:34:47.608139780 +0200
+@@ -131,12 +131,19 @@ generate_Ku(const oid * hashtype, u_int
+ #ifdef NETSNMP_USE_OPENSSL
+ 
+ #ifndef NETSNMP_DISABLE_MD5
+-    if (ISTRANSFORM(hashtype, HMACMD5Auth))
+-        EVP_DigestInit(ctx, EVP_md5());
+-    else
++    if (ISTRANSFORM(hashtype, HMACMD5Auth)) {
++        if (!EVP_DigestInit(ctx, EVP_md5())) {
++            /* MD5 not supported */
++            return SNMPERR_GENERR;
++        }
++    } else
+ #endif
+-        if (ISTRANSFORM(hashtype, HMACSHA1Auth))
+-        EVP_DigestInit(ctx, EVP_sha1());
++        if (ISTRANSFORM(hashtype, HMACSHA1Auth)) {
++            if (!EVP_DigestInit(ctx, EVP_sha1())) {
++                /* SHA1 not supported */
++                return SNMPERR_GENERR;
++            }
++        }
+     else {
+         free(ctx);
+         return (SNMPERR_GENERR);
+diff -up net-snmp-5.5/snmplib/lcd_time.c.fips net-snmp-5.5/snmplib/lcd_time.c
+--- net-snmp-5.5/snmplib/lcd_time.c.fips	2008-05-09 23:35:32.000000000 +0200
++++ net-snmp-5.5/snmplib/lcd_time.c	2013-09-05 13:34:47.609139776 +0200
+@@ -503,6 +503,12 @@ hash_engineID(u_char * engineID, u_int e
+     rval = sc_hash(usmHMACMD5AuthProtocol,
+                    sizeof(usmHMACMD5AuthProtocol) / sizeof(oid),
+                    engineID, engineID_len, buf, &buf_len);
++    if (rval == SNMPERR_SC_NOT_CONFIGURED) {
++        /* fall back to sha1 */
++        rval = sc_hash(usmHMACSHA1AuthProtocol,
++                   sizeof(usmHMACSHA1AuthProtocol) / sizeof(oid),
++                   engineID, engineID_len, buf, &buf_len);
++    }
+ #else
+     rval = sc_hash(usmHMACSHA1AuthProtocol,
+                    sizeof(usmHMACSHA1AuthProtocol) / sizeof(oid),
+diff -up net-snmp-5.5/snmplib/scapi.c.fips net-snmp-5.5/snmplib/scapi.c
+--- net-snmp-5.5/snmplib/scapi.c.fips	2009-05-15 21:22:14.000000000 +0200
++++ net-snmp-5.5/snmplib/scapi.c	2013-09-05 13:39:30.468129270 +0200
+@@ -177,6 +177,8 @@ sc_init(void)
+      * XXX ogud: The only reason to do anything here with openssl is to 
+      * * XXX ogud: seed random number generator 
+      */
++#else
++    OpenSSL_add_all_algorithms();
+ #endif                          /* ifndef NETSNMP_USE_OPENSSL */
+     return rval;
+ }                               /* end sc_init() */
+@@ -449,10 +451,12 @@ sc_hash(const oid * hashtype, size_t has
+         /* the old version of the struct was bigger and thus more
+            memory is needed. should be 152, but we use 256 for safety. */
+         cptr = (EVP_MD_CTX *)malloc(256);
+-        EVP_DigestInit(cptr, hashfn);
++        if (!EVP_DigestInit(cptr, hashfn))
++            return SNMPERR_SC_NOT_CONFIGURED;
+     } else {
+         EVP_MD_CTX_init(cptr);
+-        EVP_DigestInit(cptr, hashfn);
++        if (!EVP_DigestInit(cptr, hashfn))
++            return SNMPERR_SC_NOT_CONFIGURED;
+     }
+ #endif
+ 

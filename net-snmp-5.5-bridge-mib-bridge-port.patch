@@ -1,0 +1,23 @@
+960568 - snmp-bridge-mib includes ifindex by the bridge it self
+
+commit 962676394d3fe557ead91057b4d780226dc0d6b3
+Author: Mijo Safradin <mijos@users.sourceforge.net>
+Date:   Tue Jul 31 12:48:01 2012 -0700
+
+    CHANGES: agent: PATCH 3414051: from mijos: snmp-bridge-mib: fix for dot1dBaseTable
+    
+    Signed-off-by: Wes Hardaker <hardaker@users.sourceforge.net>
+
+diff --git a/local/snmp-bridge-mib b/local/snmp-bridge-mib
+index 4a9415e..880ea6b 100644
+--- a/local/snmp-bridge-mib
++++ b/local/snmp-bridge-mib
+@@ -375,7 +375,7 @@ sub createports()
+ 	$baseport=1;
+ 	my $oid= '.1.3.6.1.2.1.17.1.4.1';
+ 
+-	foreach my $port (keys %{$indexes{$bridge}}) {
++	foreach my $port (keys %{$interfaces{$bridge}}) {
+ 		unless(defined($first_baseport)){
+ 			$first_baseport=$baseport;
+ 			$oid_next{$oid.".1"}=$oid.".1.".$baseport;

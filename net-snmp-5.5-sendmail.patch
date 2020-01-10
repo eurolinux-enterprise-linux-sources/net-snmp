@@ -1,0 +1,59 @@
+991213 - snmpd hangs starting when sendmail queue groups are defined
+
+Based on:
+commit cf7a689b966f171862ae60b81a6635ebc7d1e8e0
+Author: Wes Hardaker <hardaker@users.sourceforge.net>
+Date:   Mon Aug 16 16:03:44 2010 +0000
+
+    CHANGES: snmpd: patch 2825653: from bru5ce: fix sendmail.cf parsing in certain conditions
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/branches/V5-4-patches@19334 06827809-a52a-0410-b366-d66718629ded
+
+--- net-snmp-5.5/agent/mibgroup/mibII/mta_sendmail.c	2009-02-03 22:57:14.000000000 -0800
++++ net-snmp-5.6.2/agent/mibgroup/mibII/mta_sendmail.c	2012-07-18 07:59:59.000000000 -0700
+@@ -499,7 +499,7 @@
+ count_queuegroup(struct QGrp *qg)
+ {
+     struct QDir    *d;
+-    char            cwd[200];
++    char            cwd[SNMP_MAXPATH];
+     time_t          current_time = time(NULL);
+ 
+     if (current_time <= (qg->last + dir_cache_time)) {
+@@ -853,8 +853,7 @@
+                 }
+ 
+                 if (strncasecmp(line + 2, "StatusFile", 10) == 0) {
+-                    strncpy(sendmailst_fn, filename, sizeof(sendmailst_fn));
+-                    sendmailst_fn[ sizeof(sendmailst_fn)-1 ] = 0;
++                    strlcpy(sendmailst_fn, filename, sizeof(sendmailst_fn));
+                     found_sendmailst = TRUE;
+                     DEBUGMSGTL(("mibII/mta_sendmail.c:read_sendmailcf",
+                                 "found statatistics file \"%s\"\n",
+@@ -948,11 +947,13 @@
+                 }
+ 
+                 /*
+-                 * skip to next , 
++                 * skip to one past the next , 
+                  */
+                 while (*p && *p != ',') {
+                     p++;
+                 }
++		if (*p)
++		    p++;
+             }
+ 
+             /*
+@@ -973,11 +974,7 @@
+         linenr++;
+     }
+ 
+-    for (i = 0; i < 10 && fclose(sendmailcf_fp) != 0; i++) {
+-        /*
+-         * nothing to do 
+-         */
+-    }
++    fclose(sendmailcf_fp);
+ 
+     for (i = mailers; i < MAXMAILERS; i++) {
+         mailernames[i][0] = '\0';

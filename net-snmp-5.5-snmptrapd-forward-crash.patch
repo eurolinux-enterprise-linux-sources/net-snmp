@@ -1,0 +1,95 @@
+1131844 - snmptrapd is crashing at the time of send v3 traps
+
+commit 7100aedffd98cda4b05164bccf17876020196e79
+Author: Sachin Surendran <sachinsurendran@users.sourceforge.net>
+Date:   Thu Aug 4 08:12:09 2011 -0700
+
+    CHANGES: snmptrapd: PATCH 3383441: from sachinsurendran: Fix crash on 5.4.4 due to access of freed memory
+    
+    Signed-off-by: Wes Hardaker <hardaker@users.sourceforge.net>
+
+diff --git a/include/net-snmp/library/snmpusm.h b/include/net-snmp/library/snmpusm.h
+index 5807ffe..0971d6e 100644
+--- a/include/net-snmp/library/snmpusm.h
++++ b/include/net-snmp/library/snmpusm.h
+@@ -137,6 +137,9 @@ extern          "C" {
+                                                         usmStateReference
+                                                         *ref,
+                                                         int sec_level);
++    int             usm_clone_usmStateReference(struct usmStateReference *from,
++                                                    struct usmStateReference **to);
++
+ 
+ #ifdef NETSNMP_ENABLE_TESTING_CODE
+     void            emergency_print(u_char * field, u_int length);
+diff --git a/snmplib/snmp_client.c b/snmplib/snmp_client.c
+index 63a607a..0e59744 100644
+--- a/snmplib/snmp_client.c
++++ b/snmplib/snmp_client.c
+@@ -349,6 +349,7 @@ _clone_pdu_header(netsnmp_pdu *pdu)
+ {
+     netsnmp_pdu    *newpdu;
+     struct snmp_secmod_def *sptr;
++    int ret;
+ 
+     newpdu = (netsnmp_pdu *) malloc(sizeof(netsnmp_pdu));
+     if (!newpdu)
+@@ -388,6 +389,19 @@ _clone_pdu_header(netsnmp_pdu *pdu)
+         snmp_free_pdu(newpdu);
+         return NULL;
+     }
++
++    if (pdu != NULL && pdu->securityStateRef &&
++        pdu->command == SNMP_MSG_TRAP2) {
++
++        ret = usm_clone_usmStateReference((struct usmStateReference *) pdu->securityStateRef,
++                (struct usmStateReference **) &newpdu->securityStateRef );
++
++        if (ret)
++        {
++            snmp_free_pdu(newpdu);
++            return 0;
++        }
++    }
+     if ((sptr = find_sec_mod(newpdu->securityModel)) != NULL &&
+         sptr->pdu_clone != NULL) {
+         /*
+diff --git a/snmplib/snmpusm.c b/snmplib/snmpusm.c
+index 1417795..06b2bd6 100644
+--- a/snmplib/snmpusm.c
++++ b/snmplib/snmpusm.c
+@@ -269,7 +269,34 @@ usm_set_usmStateReference_sec_level(struct usmStateReference *ref,
+     return 0;
+ }
+ 
++int
++usm_clone_usmStateReference(struct usmStateReference *from, struct usmStateReference **to)
++{
++    int ret;
++    struct usmStateReference *cloned_usmStateRef;
++
++    if (from == NULL || to == NULL)
++        return -1;
++
++    *to = usm_malloc_usmStateReference();
++    cloned_usmStateRef = *to;
++
++    if (usm_set_usmStateReference_name(cloned_usmStateRef, from->usr_name, from->usr_name_length) ||
++        usm_set_usmStateReference_engine_id(cloned_usmStateRef, from->usr_engine_id, from->usr_engine_id_length) ||
++        usm_set_usmStateReference_auth_protocol(cloned_usmStateRef, from->usr_auth_protocol, from->usr_auth_protocol_length) ||
++        usm_set_usmStateReference_auth_key(cloned_usmStateRef, from->usr_auth_key, from->usr_auth_key_length) ||
++        usm_set_usmStateReference_priv_protocol(cloned_usmStateRef, from->usr_priv_protocol, from->usr_priv_protocol_length) ||
++        usm_set_usmStateReference_priv_key(cloned_usmStateRef, from->usr_priv_key, from->usr_priv_key_length) ||
++        usm_set_usmStateReference_sec_level(cloned_usmStateRef, from->usr_sec_level))
++    {
++        usm_free_usmStateReference(*to);
++        *to = NULL;
++        return -1;
++    }
+ 
++    return 0;
++
++}
+ 
+ #ifdef NETSNMP_ENABLE_TESTING_CODE
+ /*******************************************************************-o-******

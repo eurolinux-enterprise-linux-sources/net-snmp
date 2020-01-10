@@ -1,0 +1,474 @@
+748410 - hrStorageSize from HOST-RESOURCES-TYPES mib reports incorrect size for filesystems > 16TB
+
+Taken from upstream commits below, some of them were backported.
+See also subsequent patch, RHEL-6 specific changes are there.
+
+commit 0af8a08625e4ffdd19254bdc15680c2b99098fb1
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Tue Jun 8 07:11:35 2010 +0000
+
+    API changes for preliminary HAL_based implementation of UCD disk module.
+    (Omitted from revision 18932 checkin)
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18953 06827809-a52a-0410-b366-d66718629ded
+
+commit f9b671e9a25724175e6f0ee987a5abbf2b8fd624
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Thu Jun 3 15:13:36 2010 +0000
+
+    Fix broken size calculations.
+    Support 64-bit size/usage values.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18931 06827809-a52a-0410-b366-d66718629ded
+
+commit 718b9205d40ca1a791897bc207ae530061c40b95
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Tue Jun 8 09:25:35 2010 +0000
+
+    Remove (or activate) unused variables.
+    Fix misnamed function declaration.
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18954 06827809-a52a-0410-b366-d66718629ded
+
+commit 71d8293f387a6cd66bb0dbb13c0f50174d2e678b
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Fri Feb 18 14:43:48 2011 +0000
+
+    CHANGES: snmpd: reworked hrStorageTable to support large filesystems.
+    
+    The hrStorageAllocationUnits does not report real allocation unit size,
+    but some calculated value so hrStorageAllocationUnits * hrStorageSize
+    gives real size of the filesystem.
+    
+    This calculation happens only when hrStorageSize is too small (32bits)
+    for filesystem size, e.g. filesystems larger than 8TB with 4096 bytes
+    block size.
+    
+    This calculation can be turned off by 'realStorageUnits' config option.
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19941 06827809-a52a-0410-b366-d66718629ded
+
+commit f8f6f7071644b7e771df8e62a93227cf960a04e7
+Author: Vladimir Kondratiev <wulf2001@users.sourceforge.net>
+Date:   Thu Aug 4 09:56:29 2011 -0700
+
+    CHANGES: agent: PATCH 3386147: from wulf2001: fix UCD-SNMP-MIB::dskUsed
+    
+    Signed-off-by: Wes Hardaker <hardaker@users.sourceforge.net>
+
+commit 76ff25d9bf97579e7213102065fd5096f049a4c5
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Fri Oct 7 14:13:18 2011 +0200
+
+    CHANGES: snmpd: HOST-RESOURCES-MIB::hrStorageTable: fix bug in handling large filesystems, where large means above 8 TB (= 2**31 * 4096 bytes).
+    
+    This patch fixes a bug introduced in commit
+    71d8293f387a6cd66bb0dbb13c0f50174d2e678b.
+    For the original bug report, see also
+    https://sourceforge.net/tracker/?func=detail&atid=112694&aid=3419825&group_id=12694.
+
+commit 6ef6907642247c663b9b8964b9fd44a211dbcaa7
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Thu Oct 20 20:30:54 2011 +0200
+
+    CHANGES: snmpd: BUG: 3408398: Fix a memory leak in agent/mibgroup/hardware/fsys.
+    
+    This memory leak was introduced via commit
+    9bf3d96d96a8ecd4a5fc35c326dc937467002b6c: Initial HAL
+    implementation of FileSystem information (March 7, 2008).
+
+commit 923eecc507f75043b60c5e68053a4f396ab0b0d2
+Author: Bart Van Assche <bvanassche@acm.org>
+Date:   Mon Nov 14 12:36:38 2011 +0100
+
+    Compiler warning fix for systems where uint64_t = unsigned long (e.g. RHEL 6.1/x86_64)
+
+commit 4bd0352955a2551bfe02308dd134b9128c98b9e9
+Author: Niels Baggesen <nba@users.sourceforge.net>
+Date:   Wed Nov 16 22:59:36 2011 +0100
+
+    Fix paranthesis problem
+
+commit b5ac4a04dcd5470d08d03321abcd1e982621e6e0
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Dec 22 14:39:46 2011 +0100
+
+    Fixed unterminated strings after strncpy
+
+diff -up net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_getfsstats.c.realStorageUnits net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_getfsstats.c
+--- net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_getfsstats.c.realStorageUnits	2012-02-06 14:55:43.056257707 +0100
++++ net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_getfsstats.c	2012-02-06 14:55:43.218256493 +0100
+@@ -156,7 +156,7 @@ netsnmp_fsys_arch_load( void )
+         entry->device[sizeof(entry->device)-1] = '\0';
+         entry->units = stats[i].f_bsize;    /* or f_frsize */
+         entry->size  = stats[i].f_blocks;
+-        entry->used  = stats[i].f_bfree;
++        entry->used  = (stats[i].f_blocks - stats[i].f_bfree);
+         entry->avail = stats[i].f_bavail;
+         entry->inums_total = stats[i].f_files;
+         entry->inums_avail = stats[i].f_ffree;
+@@ -164,7 +164,7 @@ netsnmp_fsys_arch_load( void )
+         entry->type = _fs_type( stats[i].f_fstypename );
+         entry->flags |= NETSNMP_FS_FLAG_ACTIVE;
+ 
+-        if (! stats[i].NSFS_FLAGS & MNT_LOCAL ) {
++        if (! (stats[i].NSFS_FLAGS & MNT_LOCAL )) {
+             entry->flags |= NETSNMP_FS_FLAG_REMOTE;
+         }
+         if (  stats[i].NSFS_FLAGS & MNT_RDONLY ) {
+@@ -173,6 +173,8 @@ netsnmp_fsys_arch_load( void )
+         if (  stats[i].NSFS_FLAGS & MNT_ROOTFS ) {
+             entry->flags |= NETSNMP_FS_FLAG_BOOTABLE;
+         }
+-        
++        netsnmp_fsys_calculate32(entry);
+     }
++
++    free(stats);
+ }
+diff -up net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntctl.c.realStorageUnits net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntctl.c
+--- net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntctl.c.realStorageUnits	2012-02-06 14:55:43.056257707 +0100
++++ net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntctl.c	2012-02-06 14:55:43.203256606 +0100
+@@ -171,6 +171,7 @@ netsnmp_fsys_arch_load( void )
+         entry->avail =  stat_buf.f_bavail;
+         entry->inums_total = stat_buf.f_files;
+         entry->inums_avail = stat_buf.f_ffree;
++        netsnmp_fsys_calculate32(entry);
+     }
+     free(aixmnt);
+     aixmnt  = NULL;
+diff -up net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntent.c.realStorageUnits net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntent.c
+--- net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntent.c.realStorageUnits	2012-02-06 14:55:43.136257108 +0100
++++ net-snmp-5.5/agent/mibgroup/hardware/fsys/fsys_mntent.c	2012-02-06 14:55:43.204256598 +0100
+@@ -238,6 +238,7 @@ netsnmp_fsys_arch_load( void )
+         entry->avail =  stat_buf.f_bavail;
+         entry->inums_total = stat_buf.f_files;
+         entry->inums_avail = stat_buf.f_ffree;
++        netsnmp_fsys_calculate32(entry);
+     }
+     fclose( fp );
+ }
+diff -up net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.c.realStorageUnits net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.c
+--- net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.c.realStorageUnits	2012-02-06 14:55:43.057257700 +0100
++++ net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.c	2012-02-06 14:55:43.221256470 +0100
+@@ -86,6 +86,7 @@ _fsys_update_stats( unsigned int clientr
+ int
+ netsnmp_fsys_load( netsnmp_cache *cache, void *data )
+ {
++    /* XXX - check cache timeliness */
+     return _fsys_load();
+ }
+ 
+@@ -106,6 +107,7 @@ static int
+ _fsys_load( void )
+ {
+     netsnmp_fsys_arch_load();
++    /* XXX - update cache timestamp */
+     return 0;
+ }
+ 
+@@ -170,6 +172,7 @@ netsnmp_fsys_by_path( char *path, int cr
+     sp = _fsys_create_entry();
+     if ( sp ) {
+         strncpy( sp->path, path, sizeof(sp->path) );
++        sp->path[sizeof(sp->path)-1] = '\0';
+     }
+     return sp;
+ }
+@@ -213,6 +216,7 @@ netsnmp_fsys_by_device( char *device, in
+     sp = _fsys_create_entry();
+     if ( sp ) {
+         strncpy( sp->device, device, sizeof(sp->device) );
++        sp->device[sizeof(sp->device)-1] = '\0';
+     }
+     return sp;
+ }
+@@ -246,8 +250,8 @@ _fsys_create_entry( void )
+  *  Convert fsys size information to 1K units
+  *    (attempting to avoid 32-bit overflow!)
+  */
+-unsigned int
+-_fsys_to_K( int size, int units )
++unsigned long long
++_fsys_to_K( unsigned long long size, unsigned long long units )
+ {
+     int factor = 1;
+ 
+@@ -259,33 +263,79 @@ _fsys_to_K( int size, int units )
+         return size/2;
+     } else if ( units < 1024 ) {
+         factor = 1024 / units;   /* Assuming power of two */
+-        return (size * factor);
++        return (size / factor);
+     } else {
+         factor = units / 1024;   /* Assuming multiple of 1K */
+-        return (size / factor);
++        return (size * factor);
+     }
+ }
+ 
+-unsigned int
+-netsnmp_fsys_size( netsnmp_fsys_info *f) {
++unsigned long long
++netsnmp_fsys_size_ull( netsnmp_fsys_info *f) {
+     if ( !f ) {
+         return 0;
+     }
+     return _fsys_to_K( f->size, f->units );
+ }
+ 
+-unsigned int
+-netsnmp_fsys_used( netsnmp_fsys_info *f) {
++unsigned long long
++netsnmp_fsys_used_ull( netsnmp_fsys_info *f) {
+     if ( !f ) {
+         return 0;
+     }
+     return _fsys_to_K( f->used, f->units );
+ }
+ 
+-unsigned int
+-netsnmp_fsys_avail( netsnmp_fsys_info *f) {
++unsigned long long
++netsnmp_fsys_avail_ull( netsnmp_fsys_info *f) {
+     if ( !f ) {
+         return 0;
+     }
+     return _fsys_to_K( f->avail, f->units );
+ }
++
++
++int
++netsnmp_fsys_size( netsnmp_fsys_info *f) {
++    unsigned long long v = netsnmp_fsys_size_ull(f);
++    return (int)v;
++}
++
++int
++netsnmp_fsys_used( netsnmp_fsys_info *f) {
++    unsigned long long v = netsnmp_fsys_used_ull(f);
++    return (int)v;
++}
++
++int
++netsnmp_fsys_avail( netsnmp_fsys_info *f) {
++    unsigned long long v = netsnmp_fsys_avail_ull(f);
++    return (int)v;
++}
++
++#ifndef INT32_MAX
++#define INT32_MAX 0x7fffffff
++#endif
++
++/* recalculate f->size_32, used_32, avail_32 and units_32 from f->size & comp.*/
++void
++netsnmp_fsys_calculate32(netsnmp_fsys_info *f)
++{
++    unsigned long long s = f->size;
++    unsigned shift = 0;
++
++    while (s > INT32_MAX) {
++        s = s >> 1;
++        shift++;
++    }
++
++    f->size_32 = s;
++    f->units_32 = f->units << shift;
++    f->avail_32 = f->avail >> shift;
++    f->used_32 = f->used >> shift;
++
++    DEBUGMSGTL(("fsys", "Results of 32-bit conversion: size %llu -> %lu;"
++		" units %llu -> %lu; avail %llu -> %lu; used %llu -> %lu\n",
++		(uint64_t)f->size, f->size_32, (uint64_t)f->units, f->units_32,
++		(uint64_t)f->avail, f->avail_32, (uint64_t)f->used, f->used_32));
++}
+diff -up net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.h.realStorageUnits net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.h
+--- net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.h.realStorageUnits	2012-02-06 14:55:43.057257700 +0100
++++ net-snmp-5.5/agent/mibgroup/hardware/fsys/hw_fsys.h	2012-02-06 14:55:43.201256621 +0100
+@@ -1,2 +1,2 @@
+-void init_fsys(void);
++void init_hw_fsys(void);
+ void shutdown_hw_fsys( void );
+diff -up net-snmp-5.5/agent/mibgroup/host/hrh_filesys.c.realStorageUnits net-snmp-5.5/agent/mibgroup/host/hrh_filesys.c
+--- net-snmp-5.5/agent/mibgroup/host/hrh_filesys.c.realStorageUnits	2012-02-06 14:55:43.058257693 +0100
++++ net-snmp-5.5/agent/mibgroup/host/hrh_filesys.c	2012-02-06 14:55:43.202256613 +0100
+@@ -284,6 +284,7 @@ Init_HR_FileSys(void)
+     netsnmp_cache_check_and_reload( c );
+ 
+     HRFS_entry = NULL;
++    HRFS_index = 0;
+ }
+ 
+ int
+@@ -298,7 +299,8 @@ Get_Next_HR_FileSys(void)
+     while ( HRFS_entry && !(HRFS_entry->flags & NETSNMP_FS_FLAG_ACTIVE))
+         HRFS_entry = netsnmp_fsys_get_next( HRFS_entry );
+ 
+-    return (HRFS_entry ? HRFS_entry->idx.oids[0] : -1 );
++    HRFS_index = (HRFS_entry ? HRFS_entry->idx.oids[0] : -1 );
++    return HRFS_index;
+ }
+ 
+ 
+diff -up net-snmp-5.5/agent/mibgroup/host/hrh_storage.c.realStorageUnits net-snmp-5.5/agent/mibgroup/host/hrh_storage.c
+--- net-snmp-5.5/agent/mibgroup/host/hrh_storage.c.realStorageUnits	2012-02-06 14:55:43.058257693 +0100
++++ net-snmp-5.5/agent/mibgroup/host/hrh_storage.c	2012-02-06 14:55:43.206256583 +0100
+@@ -130,6 +130,10 @@ init_hrh_storage(void)
+ 			       NETSNMP_DS_APPLICATION_ID,
+ 			       NETSNMP_DS_AGENT_SKIPNFSINHOSTRESOURCES);
+ 
++    netsnmp_ds_register_config(ASN_BOOLEAN, appname, "realStorageUnits",
++                   NETSNMP_DS_APPLICATION_ID,
++                   NETSNMP_DS_AGENT_REALSTORAGEUNITS);
++
+     snmpd_register_config_handler("storageUseNFS", parse_storage_config, NULL,
+ 	"1 | 2\t\t(1 = enable, 2 = disable)");
+ }
+@@ -415,27 +419,39 @@ really_try_next:
+             return (u_char *) mem->descr;
+         }
+     case HRSTORE_UNITS:
+-        if (store_idx > NETSNMP_MEM_TYPE_MAX)
+-            long_return = HRFS_entry->units;
+-        else {
++        if (store_idx > NETSNMP_MEM_TYPE_MAX) {
++            if (netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID,
++                    NETSNMP_DS_AGENT_REALSTORAGEUNITS))
++                long_return = HRFS_entry->units & 0xffffffff;
++            else
++                long_return = HRFS_entry->units_32;
++        } else {
+             if ( !mem || mem->units == -1 )
+                 goto try_next;
+             long_return = mem->units;
+         }
+         return (u_char *) & long_return;
+     case HRSTORE_SIZE:
+-        if (store_idx > NETSNMP_MEM_TYPE_MAX)
+-            long_return = HRFS_entry->size;
+-        else {
++        if (store_idx > NETSNMP_MEM_TYPE_MAX) {
++            if (netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID,
++                    NETSNMP_DS_AGENT_REALSTORAGEUNITS))
++                long_return = HRFS_entry->size & 0xffffffff;
++            else
++                long_return = HRFS_entry->size_32;
++        } else {
+             if ( !mem || mem->size == -1 )
+                 goto try_next;
+             long_return = mem->size;
+         }
+         return (u_char *) & long_return;
+     case HRSTORE_USED:
+-        if (store_idx > NETSNMP_MEM_TYPE_MAX)
+-            long_return = HRFS_entry->used;
+-        else {
++        if (store_idx > NETSNMP_MEM_TYPE_MAX) {
++            if (netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID,
++                    NETSNMP_DS_AGENT_REALSTORAGEUNITS))
++                long_return = HRFS_entry->used & 0xffffffff;
++            else
++                long_return = HRFS_entry->used_32;
++        } else {
+             if ( !mem || mem->size == -1 || mem->free == -1 )
+                 goto try_next;
+             long_return = mem->size - mem->free;
+diff -up net-snmp-5.5/include/net-snmp/agent/ds_agent.h.realStorageUnits net-snmp-5.5/include/net-snmp/agent/ds_agent.h
+--- net-snmp-5.5/include/net-snmp/agent/ds_agent.h.realStorageUnits	2008-06-25 19:39:42.000000000 +0200
++++ net-snmp-5.5/include/net-snmp/agent/ds_agent.h	2012-02-06 14:55:43.207256576 +0100
+@@ -27,6 +27,7 @@
+ #define NETSNMP_DS_AGENT_DONT_LOG_TCPWRAPPERS_CONNECTS 12   /* 1 = disable logging */
+ #define NETSNMP_DS_APP_DONT_LOG         NETSNMP_DS_AGENT_DONT_RETAIN_NOTIFICATIONS /* compat */
+ #define NETSNMP_DS_AGENT_SKIPNFSINHOSTRESOURCES    13   /* 1 = don't store NFS entries in hrStorageTable */
++#define NETSNMP_DS_AGENT_REALSTORAGEUNITS 14    /* 1 = use real allocation units in hrStorageTable, 0 = recalculate it to fit 32bits */
+ 
+ /* WARNING: The trap receiver uses DS flags and must not conflict with
+    these!  If you use a value above 15, change the minimimum DS bool
+diff -up net-snmp-5.5/include/net-snmp/agent/hardware/fsys.h.realStorageUnits net-snmp-5.5/include/net-snmp/agent/hardware/fsys.h
+--- net-snmp-5.5/include/net-snmp/agent/hardware/fsys.h.realStorageUnits	2012-02-06 14:55:43.059257685 +0100
++++ net-snmp-5.5/include/net-snmp/agent/hardware/fsys.h	2012-02-06 14:55:43.208256568 +0100
+@@ -47,6 +47,7 @@ typedef struct netsnmp_fsys_info_s netsn
+ #define NETSNMP_FS_FLAG_RONLY    0x04
+ #define NETSNMP_FS_FLAG_BOOTABLE 0x08
+ #define NETSNMP_FS_FLAG_REMOVE   0x10
++#define NETSNMP_FS_FLAG_UCD      0x20
+ 
+ #define NETSNMP_FS_FIND_CREATE     1   /* or use one of the type values */
+ #define NETSNMP_FS_FIND_EXIST      0
+@@ -59,13 +60,22 @@ struct netsnmp_fsys_info_s {
+      char device[SNMP_MAXPATH+1];
+      int  type;
+ 
+-     long size;
+-     long used;
+-     long avail;
+-     long units;
++     unsigned long long size;
++     unsigned long long used;
++     unsigned long long avail;
++     unsigned long long units;
++
++     /* artificially computed values, both 'size_32' and 'units_32' fit INT32 */
++     unsigned long size_32;
++     unsigned long used_32;
++     unsigned long avail_32;
++     unsigned long units_32;
+ 
+-     long inums_total;
+-     long inums_avail;
++     unsigned long long inums_total;
++     unsigned long long inums_avail;
++
++     int  minspace;
++     int  minpercent;
+ 
+      long flags;
+ 
+@@ -88,6 +98,12 @@ netsnmp_cache *netsnmp_fsys_get_cache( v
+ int  netsnmp_fsys_load( netsnmp_cache *cache, void *data );
+ void netsnmp_fsys_free( netsnmp_cache *cache, void *data );
+ 
+-unsigned int netsnmp_fsys_size( netsnmp_fsys_info* );
+-unsigned int netsnmp_fsys_used( netsnmp_fsys_info* );
+-unsigned int netsnmp_fsys_avail(netsnmp_fsys_info* );
++int netsnmp_fsys_size( netsnmp_fsys_info* );
++int netsnmp_fsys_used( netsnmp_fsys_info* );
++int netsnmp_fsys_avail(netsnmp_fsys_info* );
++
++unsigned long long netsnmp_fsys_size_ull( netsnmp_fsys_info* );
++unsigned long long netsnmp_fsys_used_ull( netsnmp_fsys_info* );
++unsigned long long netsnmp_fsys_avail_ull(netsnmp_fsys_info* );
++
++void netsnmp_fsys_calculate32( netsnmp_fsys_info *f);
+diff -up net-snmp-5.5/man/snmpd.conf.5.def.realStorageUnits net-snmp-5.5/man/snmpd.conf.5.def
+--- net-snmp-5.5/man/snmpd.conf.5.def.realStorageUnits	2012-02-06 14:55:43.159256936 +0100
++++ net-snmp-5.5/man/snmpd.conf.5.def	2012-02-06 14:55:43.210256552 +0100
+@@ -478,6 +478,25 @@ Historically, the Net-SNMP agent has rep
+ as 'Fixed Disks', and this is still the default behaviour.
+ Setting this directive to '1' reports such file systems as
+ \'Network Disks', as required by the Host Resources MIB.
++.IP "realStorageUnits"
++controlls how the agent reports hrStorageAllocationUnits, hrStorageSize and
++hrStorageUsed in hrStorageTable.
++For big storage drives with small allocation units the agent re-calculates
++these values so they all fit Integer32 and
++hrStorageAllocationUnits x hrStorageSize
++gives real size of the storage.
++.RS
++.IP "Example:"
++Linux xfs 16TB filesystem with 4096 bytes large blocks will be
++reported as  hrStorageAllocationUnits = 8192 and hrStorageSize = 2147483647,
++so 8192 x 2147483647 gives real size of the filesystem (=16 TB).
++.RE
++.IP
++Setting this directive to '1' turns off
++this calculation and the agent reports real hrStorageAllocationUnits, but it
++might report wrong hrStorageSize for big drives because the value won't fit into
++Integer32. In this case, hrStorageAllocationUnits x hrStorageSize won't give
++real size of the storage.
+ .SS Process Monitoring 
+ The \fChrSWRun\fR group of the Host Resources MIB provides
+ information about individual processes running on the local system.

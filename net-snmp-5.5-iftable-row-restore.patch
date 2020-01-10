@@ -1,0 +1,23 @@
+736264 - snmpd: error finding row index in _ifXTable_container_row_restore
+
+inspired by this commit:
+commit fd3de578eaa48243049935a8e05c4adf138f71e9
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Oct 5 15:57:59 2011 +0200
+
+    CHANGES: snmpd: Lowered severity of 'error finding row index in _ifXTable_container_row_restore' message.
+    
+    The message is shows up when snmpd is started and there is different set of network interfaces than it was when snmpd wast last stopped. This is common on ppp-servers or virtual hosts.
+
+diff -up net-snmp-5.3.2.2/agent/mibgroup/if-mib/ifXTable/ifXTable_interface.c.iftable net-snmp-5.3.2.2/agent/mibgroup/if-mib/ifXTable/ifXTable_interface.c
+--- net-snmp-5.3.2.2/agent/mibgroup/if-mib/ifXTable/ifXTable_interface.c.iftable	2011-10-05 16:02:18.374571903 +0200
++++ net-snmp-5.3.2.2/agent/mibgroup/if-mib/ifXTable/ifXTable_interface.c	2011-10-05 16:02:32.439379508 +0200
+@@ -1970,8 +1970,6 @@ _ifXTable_container_row_restore(const ch
+     }
+     rowreq_ctx = CONTAINER_FIND(container, &index);
+     if (NULL == rowreq_ctx) {
+-        snmp_log(LOG_ERR, "error finding row index in "
+-                 "_ifXTable_container_row_restore\n");
+         return;
+     }
+ 

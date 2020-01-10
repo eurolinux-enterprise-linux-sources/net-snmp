@@ -1,0 +1,36 @@
+600319 - net-snmp-5.3.2.2-broadcast-response.patch broke answering to non local host on some interfaces
+825889 - snmpd transmits reply UDP packets on incorrect interface
+
+commit 7a3bf006936988553c5a70dba38b38415acde3d2
+Author: jsafranek <jsafranek@06827809-a52a-0410-b366-d66718629ded>
+Date:   Tue Jan 11 13:34:22 2011 +0000
+
+    CHANGES: snmplib: from Bill Fenner: fix sending of UDP responses from multihomed agents.
+    
+    Try to send the response as it was before Net-SNMP 5.6 (assuming the appropriate request was unicast) and only if it fails try to set if_index (the request must be broadcast).
+    
+    git-svn-id: https://net-snmp.svn.sourceforge.net/svnroot/net-snmp/trunk@19846 06827809-a52a-0410-b366-d66718629ded
+
+diff -up net-snmp-5.5/snmplib/snmpUDPDomain.c.broadcast-response2 net-snmp-5.5/snmplib/snmpUDPDomain.c
+--- net-snmp-5.5/snmplib/snmpUDPDomain.c.broadcast-response2	2012-10-09 14:38:22.766360207 +0200
++++ net-snmp-5.5/snmplib/snmpUDPDomain.c	2012-10-09 14:38:22.802360148 +0200
+@@ -188,7 +188,7 @@ int netsnmp_udp_sendto(int fd, struct in
+     cmsg.cm.cmsg_len = sizeof(struct cmsghdr) + sizeof(struct in_pktinfo);
+     cmsg.cm.cmsg_level = SOL_IP;
+     cmsg.cm.cmsg_type = IP_PKTINFO;
+-    cmsg.ipi.ipi_ifindex = if_index;
++    cmsg.ipi.ipi_ifindex = 0;
+     cmsg.ipi.ipi_spec_dst.s_addr = (srcip ? srcip->s_addr : INADDR_ANY);
+ 
+     m.msg_name		= remote;
+@@ -206,7 +206,9 @@ int netsnmp_udp_sendto(int fd, struct in
+     if (ret < 0 && errno == EINVAL && srcip) {
+         /* The error might be caused by broadcast srcip (i.e. we're responding
+          * to broadcast request) - sendmsg does not like it. Try to resend it
+-         * with global address. */
++         * with global address and using the interface on whicg it was
++         * received */
++        cmsg.ipi.ipi_ifindex = if_index;
+         cmsg.ipi.ipi_spec_dst.s_addr = INADDR_ANY;
+         DEBUGMSGTL(("netsnmp_udp",
+                 "netsnmp_udp_sendto: re-sending the message\n"));

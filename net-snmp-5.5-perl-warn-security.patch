@@ -1,0 +1,16 @@
+1181994 - net-snmp package does not compile on Fedora 21
+
+gcc with -Werror=format-security doesn't like 'printf(str_buf)'
+
+diff -up net-snmp-5.5/perl/SNMP/SNMP.xs.warn net-snmp-5.5/perl/SNMP/SNMP.xs
+--- net-snmp-5.5/perl/SNMP/SNMP.xs.warn	2015-01-14 10:24:43.089505235 +0100
++++ net-snmp-5.5/perl/SNMP/SNMP.xs	2015-01-14 10:25:09.918584594 +0100
+@@ -4061,7 +4061,7 @@ snmp_bulkwalk(sess_ref, nonrepeaters, ma
+ 	   if (context->req_oids == NULL) {
+ 	      sprintf(str_buf, "Newz(req_oids) failed (%s)", strerror(errno));
+ 	      if (verbose)
+-	         warn(str_buf);
++	         warn("%s", str_buf);
+ 	      sv_setpv(*err_str_svp, str_buf);
+ 	      sv_setiv(*err_num_svp, SNMPERR_MALLOC);
+ 	      goto err;

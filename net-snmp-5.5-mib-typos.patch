@@ -1,0 +1,52 @@
+Bug 1162040 - A monitoring program failed to load MIB modules because of wrong MIB files
+
+From two upstream commits:
+
+
+commit 50a4e2d4a8d59e719e573ee247066fc879e3e4a0
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Mon Mar 22 16:10:51 2010 +0000
+
+    Fix typo in default IpAddress value
+    (See Bug #2972141)
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18354 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/mibs/NET-SNMP-PASS-MIB.txt b/mibs/NET-SNMP-PASS-MIB.txt
+index d92ac1b..93c1a10 100644
+--- a/mibs/NET-SNMP-PASS-MIB.txt
++++ b/mibs/NET-SNMP-PASS-MIB.txt
+@@ -49,7 +49,7 @@ netSnmpPassIpAddress OBJECT-TYPE
+     MAX-ACCESS  read-write
+     STATUS      current
+     DESCRIPTION "Example IP Address object."
+-    DEFVAL { c'7f000001'H }  -- 127.0.0.1
++    DEFVAL { '7f000001'H }  -- 127.0.0.1
+     ::= { netSnmpPassExamples 4 }
+ 
+ netSnmpPassCounter OBJECT-TYPE
+commit 9c755545d098ab5f8358a32b418426fd675ad371
+Author: Wes Hardaker <hardaker@users.sourceforge.net>
+Date:   Tue Jul 27 10:54:39 2010 +0000
+
+    CHANGES: mibs: patch 2974716: from bvassche: fix issues in the SMUX-MIB
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@19254 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/mibs/SMUX-MIB.txt b/mibs/SMUX-MIB.txt
+index 0782485..1fe3455 100644
+--- a/mibs/SMUX-MIB.txt
++++ b/mibs/SMUX-MIB.txt
+@@ -3,8 +3,10 @@ SMUX-MIB DEFINITIONS ::= BEGIN
+ IMPORTS
+         enterprises
+                 FROM RFC1155-SMI
++        DisplayString
++                FROM SNMPv2-TC
+         OBJECT-TYPE
+-                FROM RFC1212;
++                FROM RFC-1212;
+ 
+ unix    OBJECT IDENTIFIER ::= { enterprises 4 }
+ 

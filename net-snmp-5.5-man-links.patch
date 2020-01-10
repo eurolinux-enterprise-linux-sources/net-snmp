@@ -1,0 +1,89 @@
+1119567 - After installation of net-snmp-devel-5.5-44.el6_4.4.x86_64 the command '$ man snmp_read' fails 
+
+commit f51b593f99629398dbe326ee028fb7b050d9b8fb
+Author: Dave Shield <dts12@users.sourceforge.net>
+Date:   Mon Mar 22 13:59:05 2010 +0000
+
+    CHANGES: man: BUG: 2972860: Update broken references
+    
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18350 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/man/snmp_api_errstring.3 b/man/snmp_api_errstring.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_api_errstring.3
++++ b/man/snmp_api_errstring.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_close.3 b/man/snmp_close.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_close.3
++++ b/man/snmp_close.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_error.3 b/man/snmp_error.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_error.3
++++ b/man/snmp_error.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_free_pdu.3 b/man/snmp_free_pdu.3
+index 4c16baf..456d66d 100644
+--- a/man/snmp_free_pdu.3
++++ b/man/snmp_free_pdu.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/pdu_api.3
+diff --git a/man/snmp_open.3 b/man/snmp_open.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_open.3
++++ b/man/snmp_open.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_perror.3 b/man/snmp_perror.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_perror.3
++++ b/man/snmp_perror.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_read.3 b/man/snmp_read.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_read.3
++++ b/man/snmp_read.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_select_info.3 b/man/snmp_select_info.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_select_info.3
++++ b/man/snmp_select_info.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_send.3 b/man/snmp_send.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_send.3
++++ b/man/snmp_send.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_sess_perror.3 b/man/snmp_sess_perror.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_sess_perror.3
++++ b/man/snmp_sess_perror.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+diff --git a/man/snmp_timeout.3 b/man/snmp_timeout.3
+index 4c16baf..fe0a48b 100644
+--- a/man/snmp_timeout.3
++++ b/man/snmp_timeout.3
+@@ -1 +1 @@
+-.so man3/snmp_api.3
++.so man3/session_api.3
+

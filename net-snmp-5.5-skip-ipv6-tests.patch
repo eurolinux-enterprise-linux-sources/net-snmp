@@ -1,0 +1,38 @@
+657835: IPv6 tests fail instead of being skipped
+
+Detect ipv6 before testing ipv6 transports.
+
+diff -up net-snmp-5.5/testing/tests/T320udpv6.ipv6 net-snmp-5.5/testing/tests/T320udpv6
+--- net-snmp-5.5/testing/tests/T320udpv6.ipv6	2010-12-01 14:23:36.901535078 +0100
++++ net-snmp-5.5/testing/tests/T320udpv6	2010-12-01 14:22:19.000000000 +0100
+@@ -4,6 +4,13 @@
+ 
+ HEADER UDP6 Transport
+ 
++# primitive detection of ipv6
++if test `uname -s` == "Linux" ; then
++    if test ! -e /proc/net/if_inet6; then
++        SKIP
++    fi
++fi
++
+ SKIPIFNOT USING_MIBII_SYSTEM_MIB_MODULE
+ SKIPIFNOT NETSNMP_TRANSPORT_UDPIPV6_DOMAIN
+ 
+diff -up net-snmp-5.5/testing/tests/T330tcpv6.ipv6 net-snmp-5.5/testing/tests/T330tcpv6
+--- net-snmp-5.5/testing/tests/T330tcpv6.ipv6	2010-12-01 14:23:32.761891195 +0100
++++ net-snmp-5.5/testing/tests/T330tcpv6	2010-12-01 14:22:58.000000000 +0100
+@@ -4,6 +4,13 @@
+ 
+ HEADER TCP6 Transport
+ 
++# primitive detection of ipv6
++if test `uname -s` == "Linux" ; then
++    if test ! -e /proc/net/if_inet6; then
++            SKIP
++    fi
++fi
++
+ SKIPIFNOT USING_MIBII_SYSTEM_MIB_MODULE
+ SKIPIFNOT NETSNMP_TRANSPORT_TCPIPV6_DOMAIN
+ 

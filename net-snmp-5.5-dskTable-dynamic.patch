@@ -1,0 +1,227 @@
+922691 - UCD-SNMP-MIB::dskTable doesn't update dynamically
+
+Inspired by upstream commit e3fc76e0ae502fb8ef0aac87eee237db9d9690f5
+
+diff -up net-snmp-5.5/agent/mibgroup/ucd-snmp/disk.c.dskTable-dynamic net-snmp-5.5/agent/mibgroup/ucd-snmp/disk.c
+--- net-snmp-5.5/agent/mibgroup/ucd-snmp/disk.c.dskTable-dynamic	2009-02-04 07:49:46.000000000 +0100
++++ net-snmp-5.5/agent/mibgroup/ucd-snmp/disk.c	2013-07-08 16:02:59.373197105 +0200
+@@ -154,9 +154,10 @@
+ static void       disk_free_config(void);
+ static void       disk_parse_config(const char *, char *);
+ static void       disk_parse_config_all(const char *, char *);
+-static void       find_and_add_allDisks(int minpercent);
++static void       refresh_disk_table(int addNewDisks, int minpercent);
+ static void       add_device(char *path, char *device,
+-	                     int minspace, int minpercent, int override);
++	                     int minspace, int minpercent, int addNewDisks,
++	                     int override);
+ static void       modify_disk_parameters(int index, int minspace,
+ 	                                 int minpercent);
+ static int        disk_exists(char *path);
+@@ -167,6 +168,7 @@ struct diskpart {
+     char            path[STRMAX];
+     int             minimumspace;
+     int             minpercent;
++    int             alive;
+ };
+ 
+ #define MAX_INT_32 0x7fffffff
+@@ -174,6 +176,7 @@ struct diskpart {
+ 
+ int             numdisks;
+ int             allDisksIncluded = 0;
++int             allDisksMinPercent = 0;
+ int             maxdisks = 0;
+ struct diskpart *disks;
+ 
+@@ -238,6 +241,7 @@ init_disk(void)
+ 				disk_free_config,
+ 				"minpercent%");
+   allDisksIncluded = 0;
++  allDisksMinPercent = 0;
+ }
+ 
+ static void
+@@ -253,6 +257,7 @@ disk_free_config(void)
+     disks[i].minpercent = -1;
+   }
+   allDisksIncluded = 0;
++  allDisksMinPercent = 0;
+ }
+ 
+ static void 
+@@ -313,7 +318,7 @@ disk_parse_config(const char *token, cha
+    * check if the disk already exists, if so then modify its
+    * parameters. if it does not exist then add it
+    */
+-  add_device(path, find_device(path), minspace, minpercent, 1);
++  add_device(path, find_device(path), minspace, minpercent, 1, 1);
+ #endif /* HAVE_FSTAB_H || HAVE_GETMNTENT || HAVE_STATFS */
+ }
+ 
+@@ -364,14 +369,14 @@ disk_parse_config_all(const char *token,
+   }
+   else {
+       allDisksIncluded = 1;
+-      find_and_add_allDisks(minpercent);
++      allDisksMinPercent = minpercent;
+   }
+ #endif /* HAVE_FSTAB_H || HAVE_GETMNTENT || HAVE_STATFS */
+ }
+ 
+ 
+ static void
+-add_device(char *path, char *device, int minspace, int minpercent, int override) 
++add_device(char *path, char *device, int minspace, int minpercent, int addNewDisks, int override) 
+ {
+   int index;
+ 
+@@ -401,10 +406,17 @@ add_device(char *path, char *device, int
+   }
+ 
+   index = disk_exists(path);
+-  if((index != -1) && (index < maxdisks) && (override==1)) {
+-    modify_disk_parameters(index, minspace, minpercent);
++
++  if((index != -1) && (index < maxdisks)) {
++    /* the path is already in the table */
++    disks[index].alive = 1;
++    /* -> update its device */
++    strlcpy(disks[index].device, device, sizeof(disks[index].device));
++    if (override==1) {
++        modify_disk_parameters(index, minspace, minpercent);
++    }
+   }
+-  else if(index == -1){
++  else if(index == -1 && addNewDisks){
+     /* add if and only if the device was found */
+     if(device[0] != 0) {
+       /* The following buffers are cleared above, no need to add '\0' */
+@@ -413,6 +425,7 @@ add_device(char *path, char *device, int
+               sizeof(disks[numdisks].device) - 1);
+       disks[numdisks].minimumspace = minspace;
+       disks[numdisks].minpercent   = minpercent;
++      disks[numdisks].alive        = 1;
+       numdisks++;  
+     }
+     else {
+@@ -420,6 +433,7 @@ add_device(char *path, char *device, int
+       disks[numdisks].minpercent = -1;
+       disks[numdisks].path[0] = 0;
+       disks[numdisks].device[0] = 0;
++      disks[numdisks].alive = 0;
+     }
+   }
+ }
+@@ -444,7 +458,7 @@ int disk_exists(char *path)
+ }
+ 
+ static void 
+-find_and_add_allDisks(int minpercent)
++refresh_disk_table(int addNewDisks, int minpercent)
+ {
+ #if HAVE_GETMNTENT
+ #if HAVE_SYS_MNTTAB_H
+@@ -478,7 +492,7 @@ find_and_add_allDisks(int minpercent)
+       return;
+   }
+   while (mntfp && NULL != (mntent = getmntent(mntfp))) {
+-    add_device(mntent->mnt_dir, mntent->mnt_fsname, -1, minpercent, 0);
++    add_device(mntent->mnt_dir, mntent->mnt_fsname, -1, minpercent, addNewDisks, 0);
+     dummy = 1;
+   }
+   if (mntfp)
+@@ -495,7 +509,7 @@ find_and_add_allDisks(int minpercent)
+       return;
+   }
+   while ((i = getmntent(mntfp, &mnttab)) == 0) {
+-    add_device(mnttab.mnt_mountp, mnttab.mnt_special, -1, minpercent, 0);
++    add_device(mnttab.mnt_mountp, mnttab.mnt_special, -1, minpercent, addNewDisks, 0);
+     dummy = 1;
+   }
+   fclose(mntfp);
+@@ -508,7 +522,7 @@ find_and_add_allDisks(int minpercent)
+ #elif HAVE_FSTAB_H
+   setfsent();			/* open /etc/fstab */
+   while((fstab1 = getfsent()) != NULL) {
+-    add_device(fstab1->fs_file, fstab1->fs_spec, -1, minpercent, 0);
++    add_device(fstab1->fs_file, fstab1->fs_spec, -1, minpercent, addNewDisks, 0);
+     dummy = 1;
+   }
+   endfsent();			/* close /etc/fstab */
+@@ -523,7 +537,7 @@ find_and_add_allDisks(int minpercent)
+    * statfs we default to the root partition "/"
+    */
+   if (statfs("/", &statf) == 0) {
+-    add_device("/", statf.f_mntfromname, -1, minpercent, 0);
++    add_device("/", statf.f_mntfromname, -1, minpercent, addNewDisks, 0);
+   }
+ #endif
+   else {
+@@ -687,6 +701,9 @@ fill_dsk_entry(int disknum, struct dsk_e
+ #endif
+ #endif
+ 
++    if (disks[disknum].alive == 0)
++        return -1;
++
+     entry->dskPercentInode = -1;
+ 
+ #if defined(HAVE_STATVFS) || defined(HAVE_STATFS)
+@@ -812,6 +829,13 @@ var_extensible_disk(struct variable *vp,
+     static long     long_ret;
+     static char     errmsg[300];
+ 
++
++    int i;
++    for (i = 0; i< numdisks; i++)
++        disks[i].alive = 0;
++    /* dynamically add new disks + update alive flag */
++    refresh_disk_table(allDisksIncluded, allDisksMinPercent);
++
+ tryAgain:
+     if (header_simple_table
+         (vp, name, length, exact, var_len, write_method, numdisks))
+commit e3fc76e0ae502fb8ef0aac87eee237db9d9690f5
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Tue Jul 9 14:26:59 2013 +0200
+
+    CHANGES: snmpd: Make UCD-SNMP::dskTable dynamic if includeAllDisks is set.
+
+index 5f85f72..d2caf9c 100644
+--- a/man/snmpd.conf.5.def
++++ b/man/snmpd.conf.5.def
+@@ -652,6 +652,8 @@ This requires that the agent was built with support for the
+ default build configuration).
+ .IP "disk PATH [ MINSPACE | MINPERCENT% ]"
+ monitors the disk mounted at PATH for available disk space.
++Disks mounted after the agent has started will not be monitored,
++unless \fIincludeAllDisks\fR option is specified.
+ .IP
+ The minimum threshold can either be specified in kB (MINSPACE) or
+ as a percentage of the total disk (MINPERCENT% with a '%' character),
+@@ -668,6 +670,9 @@ the problem - see the DisMan Event MIB section later.
+ .IP "includeAllDisks MINPERCENT%"
+ configures monitoring of all disks found on the system,
+ using the specified (percentage) threshold.
++The \fCdskTable\fR is dynamically updated, unmounted disks
++disappear from the table and newly mounted disks are
++added to the table.
+ The threshold for individual disks can be adjusted using suitable
+ \fIdisk\fR directives (which can come either before or after the
+ \fIincludeAllDisks\fR directive).
+@@ -680,12 +685,8 @@ may affect the indexing of the \fCdskTable\fR.
+ Only one \fIincludeAllDisks\fR directive should be specified - any
+ subsequent copies will be ignored.
+ .IP
+-The list of mounted disks will be determined when the agent starts using the
+-setmntent(3) and getmntent(3), or fopen(3) and getmntent(3),  or
+-setfsent(3)  and  getfsent(3) system calls. If none of the above
+-system calls are available then the root partition  "/"
+-(which  is  assumed to exist on any UNIX based system) will be monitored.
+-Disks mounted after the agent has started will not be monitored.
++The list of mounted disks will be determined from
++HOST-RESOURCES-MIB::hrFSTable.
+ .\"
+ .\" XXX - unless the config is re-read ??
+ .\"

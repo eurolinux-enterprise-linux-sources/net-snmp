@@ -1,0 +1,23 @@
+927474 - [RHEL6.4] "12 bytes leftover after parsing attributes" warning is shown after running "snmpd -D -H"
+
+commit 8a3f84a4fbaea3686c0c3c33a24b75dec8efeefe
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jul 4 11:34:25 2013 +0200
+
+    Fixed size of netlink message.
+    
+    Preventing kernel to log 'netlink: 12 bytes leftover after parsing attributes.' message.
+
+diff --git a/agent/mibgroup/if-mib/data_access/interface_linux.c b/agent/mibgroup/if-mib/data_access/interface_linux.c
+index 6d0cc1b..0ed9303 100644
+--- a/agent/mibgroup/if-mib/data_access/interface_linux.c
++++ b/agent/mibgroup/if-mib/data_access/interface_linux.c
+@@ -971,7 +971,7 @@ int netsnmp_prefix_listen()
+     }
+ 
+     memset(&req, 0, sizeof(req));
+-    req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
++    req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtgenmsg));
+     req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_ROOT;
+     req.n.nlmsg_type = RTM_GETLINK;
+     req.r.ifi_family = AF_INET6;

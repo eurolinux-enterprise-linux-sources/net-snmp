@@ -1,0 +1,17 @@
+848155 - package net-snmp-5.5-41.el6_3.1.x86_64 always fail to read these three values of UCD-DISKIO-MIB, diskIOLA1, diskIOLA5, diskIOLA15
+
+Source:  upstream SVN
+
+Index: trunk/net-snmp/agent/mibgroup/ucd-snmp/diskio.c
+===================================================================
+--- trunk/net-snmp/agent/mibgroup/ucd-snmp/diskio.c	(revision 19232)
++++ trunk/net-snmp/agent/mibgroup/ucd-snmp/diskio.c	(revision 19233)
+@@ -158,7 +158,7 @@
+          var_diskio, 1, {5}},
+         {DISKIO_WRITES, ASN_COUNTER, NETSNMP_OLDAPI_RONLY,
+          var_diskio, 1, {6}},
+-#if defined(freebsd4) || defined(freebsd5)
++#if defined(freebsd4) || defined(freebsd5) || defined(linux)
+         {DISKIO_LA1, ASN_INTEGER, NETSNMP_OLDAPI_RONLY,
+          var_diskio, 1, {9}},
+         {DISKIO_LA5, ASN_INTEGER, NETSNMP_OLDAPI_RONLY,
