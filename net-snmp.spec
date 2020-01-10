@@ -14,7 +14,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.5
-Release: 57%{?dist}
+Release: 57%{?dist}.1
 Epoch: 1
 
 License: BSD
@@ -176,6 +176,8 @@ Patch138: net-snmp-5.5-client-udp6.patch
 Patch139: net-snmp-5.5-duplicate-ipAddress-log.patch
 Patch140: net-snmp-5.5-sctp-fd-leak.patch
 Patch141: net-snmp-5.5-large-fdset.patch
+# An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out (#1363606)
+Patch142: net-snmp-5.5-pdu-version.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -443,6 +445,7 @@ Net-SNMP toolkit library.
 %patch139 -p1 -b .duplicate-ipAddress-log
 %patch140 -p1 -b .sctp-fd-leak
 %patch141 -p1 -b .large-fdset
+%patch142 -p1 -b .pdu-version
 
 %build
 MIBS="host agentx smux \
@@ -702,6 +705,9 @@ rm -rf ${RPM_BUILD_ROOT}
 %dir %{_localstatedir}/lib/net-snmp
 
 %changelog
+* Wed Aug  3 2016 Josef Ridky <jridky@redhat.com> - 1:5.5-57.el6_8.1
+- Resolves: #1363606 - An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out
+
 * Wed Jan 20 2016 Jan Safranek <jsafrane@redhat.com> - 1:5.5-57.el6
 - Removed debug output in large FD_SET processing
 
