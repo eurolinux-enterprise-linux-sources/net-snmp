@@ -11,14 +11,14 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.7.2
-Release: 32%{?dist}
+Release: 33%{?dist}.2
 Epoch: 1
 
 License: BSD
 Group: System Environment/Daemons
 URL: http://net-snmp.sourceforge.net/
 Source0: net-snmp-%{version}-noapsl.tar.gz
-# Original source: http://dl.sourceforge.net/net-snmp/net-snmp-%{version}.tar.gz
+# Original source: http://dl.sourceforge.net/net-snmp/net-snmp-%%{version}.tar.gz
 # Net-snmp contains code licensed under APSL 1.1. This code is used on MacOS only,
 # and it must be removed from source code before we distribute source RPM.
 # Download the upstream tarball and invoke this script while in the
@@ -101,6 +101,8 @@ Patch64: net-snmp-5.7.2-strstr.patch
 Patch66: net-snmp-5.7.2-documentation.patch
 Patch67: net-snmp-5.7.2-iterator-fix.patch
 Patch68: net-snmp-5.7.2-autofs.patch
+Patch69: net-snmp-5.7.2-leak-backport.patch
+Patch70: net-snmp-5.7.2-acfs.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -322,6 +324,8 @@ The net-snmp-sysvinit package provides SysV init scripts for Net-SNMP daemons.
 %patch66 -p1 -b .documentation
 %patch67 -p1 -b .iteratorpatch
 %patch68 -p1 -b .autofspatch
+%patch69 -p1 -b .leak-backport
+%patch70 -p1 -b .acfs
 
 %ifarch sparc64 s390 s390x
 # disable failing test - see https://bugzilla.redhat.com/show_bug.cgi?id=680697
@@ -617,6 +621,15 @@ rm -rf ${RPM_BUILD_ROOT}
 %{_initrddir}/snmptrapd
 
 %changelog
+* Mon Apr 23 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33.2
+- Add ACFS support (#1570506)
+
+* Wed Mar 28 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33.1
+- Build for z-stream (#1560965)
+
+* Tue Mar 27 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33
+- Backport upstream leak fix (#1533780)
+
 * Wed Jan 24 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-32
 - Add net-snmp as requirement of net-snmp-devel
 
