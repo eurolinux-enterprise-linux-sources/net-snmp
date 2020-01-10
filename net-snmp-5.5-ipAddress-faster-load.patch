@@ -382,7 +382,7 @@ diff -up net-snmp-5.5/agent/mibgroup/mibII/ipAddr.c.test net-snmp-5.5/agent/mibg
 +
 +    for (i = 8;; i *= 2) {
 +        ifc.ifc_len = sizeof(struct ifreq) * i;
-+        ifc.ifc_buf = calloc(i, sizeof(struct ifreq));
++        ifc.ifc_req = calloc(i, sizeof(struct ifreq));
 +
 +        if (ioctl(fd, SIOCGIFCONF, &ifc) < 0) {
 +            if (errno != EINVAL || lastlen != 0) {

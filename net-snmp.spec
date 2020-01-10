@@ -14,7 +14,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.5
-Release: 54%{?dist}
+Release: 54%{?dist}.1
 Epoch: 1
 
 License: BSD
@@ -166,6 +166,7 @@ Patch128: net-snmp-5.5-sensors-duplicate.patch
 Patch129: net-snmp-5.5-device-large-ifindex.patch
 Patch130: net-snmp-5.5-null-integer.patch
 Patch131: net-snmp-5.5-ipAddress-faster-load.patch
+Patch132: net-snmp-5.5-incomplete-parse.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -423,6 +424,7 @@ Net-SNMP toolkit library.
 %patch129 -p1 -b .device-large-ifindex
 %patch130 -p1 -b .null-integer
 %patch131 -p1 -b .ipAddress-faster-load
+%patch132 -p1 -b .incomplete-parse
 
 %build
 MIBS="host agentx smux \
@@ -682,6 +684,9 @@ rm -rf ${RPM_BUILD_ROOT}
 %dir %{_localstatedir}/lib/net-snmp
 
 %changelog
+* Thu Jul 30 2015 Jan Safranek <jsafrane@redhat.com> - 1:5.5-54.el6_7.1
+- Fixed parsing of invalid variables in incoming packets (#1248410)
+
 * Thu Apr 30 2015 Jan Safranek <jsafrane@redhat.com> - 1:5.5-54
 - Quicker loading of IP-MIB::ipAddrTable (#1191393)
 
