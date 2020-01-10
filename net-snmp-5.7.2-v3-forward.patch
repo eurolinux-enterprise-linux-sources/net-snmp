@@ -1,0 +1,12 @@
+diff -urNp N/snmplib/snmpusm.c M/snmplib/snmpusm.c
+--- N/snmplib/snmpusm.c	2019-03-04 13:02:27.989775985 +0100
++++ M/snmplib/snmpusm.c	2019-03-04 14:16:50.977619867 +0100
+@@ -1842,7 +1842,7 @@ usm_rgenerate_out_msg(int msgProcModel,
+     /*
+      * endif -- create keyed hash 
+      */
+-    usm_free_usmStateReference(secStateRef);
++//    usm_free_usmStateReference(secStateRef);
+     DEBUGMSGTL(("usm", "USM processing completed.\n"));
+     return SNMPERR_SUCCESS;
+ }                               /* end usm_rgenerate_out_msg() */

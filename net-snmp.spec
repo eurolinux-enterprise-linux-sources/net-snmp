@@ -11,7 +11,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.7.2
-Release: 37%{?dist}
+Release: 38%{?dist}.2
 Epoch: 1
 
 License: BSD
@@ -106,6 +106,9 @@ Patch70: net-snmp-5.7.2-acfs.patch
 Patch71: net-snmp-5.7.2-fsync.patch
 Patch72: net-snmp-5.7.2-zfs-support.patch
 Patch73: net-snmp-5.7.2-man-page.patch
+Patch74: net-snmp-5.7.2-key-leak-backport.patch
+Patch75: net-snmp-5.7.2-null-magic.patch
+Patch76: net-snmp-5.7.2-v3-forward.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -332,6 +335,9 @@ The net-snmp-sysvinit package provides SysV init scripts for Net-SNMP daemons.
 %patch71 -p1 -b .fsync
 %patch72 -p1 -b .zfs-support
 %patch73 -p1 -b .man-page
+%patch74 -p1 -b .key-bakcport
+%patch75 -p1 -b .null-magic
+%patch76 -p1 -b .v3-forward
 
 %ifarch sparc64 s390 s390x
 # disable failing test - see https://bugzilla.redhat.com/show_bug.cgi?id=680697
@@ -627,6 +633,15 @@ rm -rf ${RPM_BUILD_ROOT}
 %{_initrddir}/snmptrapd
 
 %changelog
+* Mon May 13 2019 Josef Ridky <jridky@redhat.com> - 1:5.7.2-38.2
+- fix trapd crash when forward snmp v3 traps (#1709111)
+
+* Thu Apr 18 2019 Josef Ridky <jridky@redhat.com> - 1:5.7.2-38.1
+- secure magic variable to prevent daemon crash (#1701211)
+
+* Mon Nov 26 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-38
+- backport upstream fixes of memory leaks (#1650393)
+
 * Thu Sep 06 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-37
 - fix fsync issue (#1520761)
 
