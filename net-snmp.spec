@@ -14,7 +14,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.5
-Release: 57%{?dist}.1
+Release: 60%{?dist}
 Epoch: 1
 
 License: BSD
@@ -176,8 +176,12 @@ Patch138: net-snmp-5.5-client-udp6.patch
 Patch139: net-snmp-5.5-duplicate-ipAddress-log.patch
 Patch140: net-snmp-5.5-sctp-fd-leak.patch
 Patch141: net-snmp-5.5-large-fdset.patch
-# An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out (#1363606)
+# An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out (#1315481)
 Patch142: net-snmp-5.5-pdu-version.patch
+# fix parser for SCTP stats
+Patch143: net-snmp-5.5-SCTP-parser.patch
+# fix reading of ipAddressTable from /proc/net/if_inet6
+Patch144: net-snmp-5.5-ipAddressTable-reading.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -446,6 +450,8 @@ Net-SNMP toolkit library.
 %patch140 -p1 -b .sctp-fd-leak
 %patch141 -p1 -b .large-fdset
 %patch142 -p1 -b .pdu-version
+%patch143 -p1 -b .SCTP-parser
+%patch144 -p1 -b .ipAddressTable-reading
 
 %build
 MIBS="host agentx smux \
@@ -705,8 +711,14 @@ rm -rf ${RPM_BUILD_ROOT}
 %dir %{_localstatedir}/lib/net-snmp
 
 %changelog
-* Wed Aug  3 2016 Josef Ridky <jridky@redhat.com> - 1:5.5-57.el6_8.1
-- Resolves: #1363606 - An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out
+* Wed Nov 23 2016 Josef Ridky <jridky@redhat.com> - 1:5.5-60.el6
+- fix reading of ipAddressTable from /proc/net/if_inet6 on Linux (#1396337)
+
+* Fri Sep  9 2016 Josef Ridky <jridky@redhat.com> - 1:5.5-59.el6
+- fix parser for SCTP stats (#1329333)
+
+* Mon Aug  1 2016 Josef Ridky <jridky@redhat.com> - 1:5.5-58.el6
+- Resolves: #1315481 - An SNMPv3 request with a small max message size can lead to SNMPv1/2c bulk requests timing out
 
 * Wed Jan 20 2016 Jan Safranek <jsafrane@redhat.com> - 1:5.5-57.el6
 - Removed debug output in large FD_SET processing

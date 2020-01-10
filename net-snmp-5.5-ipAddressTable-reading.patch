@@ -1,0 +1,12 @@
+diff -urNp old/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c new/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c
+--- old/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c	2016-11-23 10:16:33.639086729 +0100
++++ new/agent/mibgroup/ip-mib/data_access/ipaddress_linux.c	2016-11-23 10:16:15.061162652 +0100
+@@ -250,7 +250,7 @@ _load_v6(netsnmp_container *container, i
+          * F: flags (see include/linux/rtnetlink.h, net/ipv6/addrconf.c)
+          * I: interface
+          */
+-        rc = sscanf(line, "%39s %04x %02x %02x %02x %" SNMP_MACRO_VAL_TO_STR(IFNAMSIZ) "s\n",
++        rc = sscanf(line, "%39s %08x %08x %04x %02x %" SNMP_MACRO_VAL_TO_STR(IFNAMSIZ) "s\n",
+                     addr, &if_index, &pfx_len, &scope, &flags, if_name);
+         if( 6 != rc ) {
+             snmp_log(LOG_ERR, PROCFILE " data format error (%d!=6), line ==|%s|\n",
