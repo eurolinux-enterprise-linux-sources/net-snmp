@@ -1,0 +1,124 @@
+1227640 - snmpwalk lack IPv6 support for talking to snmpd
+
+Backported from:
+commit df863a5348aabf71bbca7bfefcf8beb8bb9e7762
+Author: Niels Baggesen <nba@users.sourceforge.net>
+Date:   Wed Jun 12 22:17:46 2013 +0200
+
+    Fix Bug #2427: Cannot resolve IPv6 only hostnames, by accepting a list
+    of transport domains.
+
+diff -up net-snmp-5.5/snmplib/snmp_api.c.client-udp6 net-snmp-5.5/snmplib/snmp_api.c
+--- net-snmp-5.5/snmplib/snmp_api.c.client-udp6	2016-01-18 12:43:15.337308246 +0100
++++ net-snmp-5.5/snmplib/snmp_api.c	2016-01-18 12:43:15.349308272 +0100
+@@ -1514,12 +1514,12 @@ _sess_open(netsnmp_session * in_session)
+         if (in_session->flags & SNMP_FLAGS_STREAM_SOCKET) {
+             transport =
+                 netsnmp_tdomain_transport_full("snmp", in_session->peername,
+-                                               in_session->local_port, "tcp",
++                                               in_session->local_port, "tcp,tcp6",
+                                                NULL);
+         } else {
+             transport =
+                 netsnmp_tdomain_transport_full("snmp", in_session->peername,
+-                                               in_session->local_port, "udp",
++                                               in_session->local_port, "udp,udp6",
+                                                NULL);
+         }
+ 
+diff -up net-snmp-5.5/snmplib/snmp_transport.c.client-udp6 net-snmp-5.5/snmplib/snmp_transport.c
+--- net-snmp-5.5/snmplib/snmp_transport.c.client-udp6	2009-03-20 17:50:01.000000000 +0100
++++ net-snmp-5.5/snmplib/snmp_transport.c	2016-01-18 12:44:45.968502253 +0100
+@@ -359,6 +359,8 @@ netsnmp_tdomain_transport_full(const cha
+     const char         *addr = NULL;
+     const char * const *spec = NULL;
+     int                 any_found = 0;
++    char **lspec = 0;
++    char *tokenized_domain = 0;
+ 
+     DEBUGMSGTL(("tdomain",
+                 "tdomain_transport_full(\"%s\", \"%s\", %d, \"%s\", \"%s\")\n",
+@@ -397,7 +399,22 @@ netsnmp_tdomain_transport_full(const cha
+             DEBUGMSGTL(("tdomain",
+                         "Use user specified default domain \"%s\"\n",
+                         default_domain));
+-            match = find_tdomain(default_domain);
++            if (!strchr(default_domain, ','))
++                match = find_tdomain(default_domain);
++            else {
++                int commas = 0;
++                const char *cp = default_domain;
++                char *ptr = NULL;
++                tokenized_domain = strdup(default_domain);
++
++                while (*++cp) if (*cp == ',') commas++;
++                lspec = calloc(commas+2, sizeof(char *));
++                commas = 1;
++                lspec[0] = strtok_r(tokenized_domain, ",", &ptr);
++                while ((lspec[commas++] = strtok_r(NULL, ",", &ptr)))
++                    ;
++                spec = (const char * const *)lspec;
++            }
+         } else {
+             spec = netsnmp_lookup_default_domains(application);
+             if (spec == NULL) {
+@@ -441,8 +458,13 @@ netsnmp_tdomain_transport_full(const cha
+                 t = match->f_create_from_tstring(addr, local);
+             else
+                 t = match->f_create_from_tstring_new(addr, local, addr2);
+-            if (t)
++            if (t) {
++                if (lspec) {
++                    free(tokenized_domain);
++                    free(lspec);
++                }
+                 return t;
++            }
+         }
+         addr = str;
+         if (spec && *spec)
+@@ -452,6 +474,10 @@ netsnmp_tdomain_transport_full(const cha
+     }
+     if (!any_found)
+         snmp_log(LOG_ERR, "No support for any checked transport domain\n");
++    if (lspec) {
++        free(tokenized_domain);
++        free(lspec);
++    }
+     return NULL;
+ }
+ 
+diff -up net-snmp-5.5/snmplib/snmpUDPIPv6Domain.c.client-udp6 net-snmp-5.5/snmplib/snmpUDPIPv6Domain.c
+--- net-snmp-5.5/snmplib/snmpUDPIPv6Domain.c.client-udp6	2016-01-18 12:43:15.339308251 +0100
++++ net-snmp-5.5/snmplib/snmpUDPIPv6Domain.c	2016-01-18 12:43:15.350308274 +0100
+@@ -608,13 +608,6 @@ netsnmp_sockaddr_in6_2(struct sockaddr_i
+ 
+         err = getaddrinfo(peername, NULL, &hint, &addrs);
+         if (err != 0) {
+-#if HAVE_GAI_STRERROR
+-            snmp_log(LOG_ERR, "getaddrinfo(\"%s\", NULL, ...): %s\n", peername,
+-                     gai_strerror(err));
+-#else
+-            snmp_log(LOG_ERR, "getaddrinfo(\"%s\", NULL, ...): (error %d)\n",
+-                     peername, err);
+-#endif
+             free(peername);
+             return 0;
+         }
+diff -up net-snmp-5.5/snmplib/system.c.client-udp6 net-snmp-5.5/snmplib/system.c
+--- net-snmp-5.5/snmplib/system.c.client-udp6	2016-01-18 12:43:15.153307852 +0100
++++ net-snmp-5.5/snmplib/system.c	2016-01-18 12:43:15.350308274 +0100
+@@ -910,13 +910,6 @@ netsnmp_gethostbyname_v4(const char* nam
+ 
+     err = getaddrinfo(name, NULL, &hint, &addrs);
+     if (err != 0) {
+-#if HAVE_GAI_STRERROR
+-        snmp_log(LOG_ERR, "getaddrinfo: %s %s\n", name,
+-                 gai_strerror(err));
+-#else
+-        snmp_log(LOG_ERR, "getaddrinfo: %s (error %d)\n", name,
+-                 err);
+-#endif
+         return -1;
+     }
+     if (addrs != NULL) {

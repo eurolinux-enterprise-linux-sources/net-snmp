@@ -1,0 +1,14 @@
+1227374 - Log a meaningful message on duplicate IP address
+
+Just patching RHEL6 to remove regression. This code was reworked upstream.
+
+--- net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_common.c	2015-06-02 13:32:49.676130478 +0200
++++ net-snmp-5.5/agent/mibgroup/ip-mib/data_access/ipaddress_common.c	2015-06-02 13:33:00.363153702 +0200
+@@ -130,6 +130,7 @@ _remove_duplicates(netsnmp_container *co
+ 	for (entry = ITERATOR_FIRST(it); entry; entry = ITERATOR_NEXT(it)) {
+ 		if (prev_entry && _access_ipaddress_entry_compare_addr(prev_entry, entry) == 0) {
+ 			/* 'entry' is duplicate of the previous one -> delete it */
++			NETSNMP_LOGONCE((LOG_ERR, "Duplicate IPv4 address detected, some interfaces may not be visible in IP-MIB\n"));
+ 			netsnmp_access_ipaddress_entry_free(entry);
+ 		} else {
+ 			CONTAINER_INSERT(ret, entry);

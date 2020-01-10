@@ -14,7 +14,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.5
-Release: 54%{?dist}.1
+Release: 57%{?dist}
 Epoch: 1
 
 License: BSD
@@ -167,6 +167,15 @@ Patch129: net-snmp-5.5-device-large-ifindex.patch
 Patch130: net-snmp-5.5-null-integer.patch
 Patch131: net-snmp-5.5-ipAddress-faster-load.patch
 Patch132: net-snmp-5.5-incomplete-parse.patch
+Patch133: net-snmp-5.5-udp6-clientaddr.patch
+Patch134: net-snmp-5.5-agentx-big-packet.patch
+Patch135: net-snmp-5.5-systemstats-ipv4.patch
+Patch136: net-snmp-5.5-client-write-var.patch
+Patch137: net-snmp-5.5-mib-typos2.patch
+Patch138: net-snmp-5.5-client-udp6.patch
+Patch139: net-snmp-5.5-duplicate-ipAddress-log.patch
+Patch140: net-snmp-5.5-sctp-fd-leak.patch
+Patch141: net-snmp-5.5-large-fdset.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -425,6 +434,15 @@ Net-SNMP toolkit library.
 %patch130 -p1 -b .null-integer
 %patch131 -p1 -b .ipAddress-faster-load
 %patch132 -p1 -b .incomplete-parse
+%patch133 -p1 -b .udp6-clientaddr
+%patch134 -p1 -b .agentx-big-packet
+%patch135 -p1 -b .systemstats-ipv4
+%patch136 -p1 -b .client-write-var
+%patch137 -p1 -b .mib-typos2
+%patch138 -p1 -b .client-udp6
+%patch139 -p1 -b .duplicate-ipAddress-log
+%patch140 -p1 -b .sctp-fd-leak
+%patch141 -p1 -b .large-fdset
 
 %build
 MIBS="host agentx smux \
@@ -684,6 +702,24 @@ rm -rf ${RPM_BUILD_ROOT}
 %dir %{_localstatedir}/lib/net-snmp
 
 %changelog
+* Wed Jan 20 2016 Jan Safranek <jsafrane@redhat.com> - 1:5.5-57.el6
+- Removed debug output in large FD_SET processing
+
+* Tue Jan 19 2016 Jan Safranek <jsafrane@redhat.com> - 1:5.5-56.el6
+- Fixed crash when processing large file descriptor (#1261727)
+
+* Thu Nov 26 2015 Jan Safranek <jsafrane@redhat.com> - 1:5.5-55.el6
+- Fixed 'clientaddr' option for UDPv6 client messages (#1279501)
+- Increased maximum size of AgentX packets (#1271196).
+- Fixed IP-MIB::ipSystemStatsInOctets and similar counters for IPv4
+  (#1250023).
+- Fixed client utilities reporting 'read_config_store open failure on
+  /var/lib/net-snmp/snmpapp.conf' (#1246568)
+- Fixed typos in NET-SNMP-AGENT-MIB.txt (#1241865)
+- Allow clients to use UDPv6 addresses without 'udp6:' prefix (#1227640)
+- Restored message about duplicate IP address (#1227374)
+- Fixed fd leak in sctp statistics (#1291054)
+
 * Thu Jul 30 2015 Jan Safranek <jsafrane@redhat.com> - 1:5.5-54.el6_7.1
 - Fixed parsing of invalid variables in incoming packets (#1248410)
 

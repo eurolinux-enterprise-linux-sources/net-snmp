@@ -1,0 +1,20 @@
+271196 - snmpd SNMP_MAX_MSG_SIZE in AgentX code is the constant wrongly used for message buffer size
+
+commit c09140c934eb9de6b861cab063cdad66a721ffb1
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Mon Nov 30 14:26:46 2015 +0100
+
+    CHANGES: snmpd: Increase maximum AgentX packet size to 64kB.
+
+diff -up net-snmp-5.5/agent/mibgroup/agentx/protocol.c.test net-snmp-5.5/agent/mibgroup/agentx/protocol.c
+--- net-snmp-5.5/agent/mibgroup/agentx/protocol.c.test	2015-11-30 14:34:27.090927205 +0100
++++ net-snmp-5.5/agent/mibgroup/agentx/protocol.c	2015-11-30 14:34:53.406705896 +0100
+@@ -1541,7 +1541,7 @@ agentx_parse(netsnmp_session * session,
+              size_t len)
+ {
+     register u_char *bufp = data;
+-    u_char          buffer[SNMP_MAX_MSG_SIZE];
++    u_char          buffer[65535];
+     u_char         *prefix_ptr;
+     oid             oid_buffer[MAX_OID_LEN], end_oid_buf[MAX_OID_LEN];
+     size_t          buf_len = sizeof(buffer);

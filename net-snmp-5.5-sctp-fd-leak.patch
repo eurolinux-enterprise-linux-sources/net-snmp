@@ -1,0 +1,50 @@
+1291054 - net-snmp leaks fds when on an SCTP enabled system
+
+commit 65f2b7bcd4fe03906aa1a115ab60a89b8ae933d5
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Thu Jan 19 12:51:36 2012 +0100
+
+    Close open files on error.
+
+diff --git a/agent/mibgroup/sctp-mib/sctpScalars_linux.c b/agent/mibgroup/sctp-mib/sctpScalars_linux.c
+index 8cbe90f..2e5b5af 100644
+--- a/agent/mibgroup/sctp-mib/sctpScalars_linux.c
++++ b/agent/mibgroup/sctp-mib/sctpScalars_linux.c
+@@ -35,6 +35,7 @@ load_uint_file(const char *filename, u_int * value)
+     if (ret != 1) {
+         DEBUGMSGTL(("sctp:scalars:arch:load", "Malformed file %s\n",
+                     filename));
++        fclose(f);
+         return -2;
+     }
+ 
+@@ -71,6 +72,7 @@ netsnmp_access_sctp_stats_arch_load(netsnmp_sctp_stats * sctp_stats)
+         if (delimiter == NULL) {
+             DEBUGMSGTL(("sctp:scalars:stats:arch_load",
+                         "Malformed line, cannot find '\\t'!\n"));
++            fclose(f);
+             return -1;
+         }
+         errno = 0;
+@@ -78,6 +80,7 @@ netsnmp_access_sctp_stats_arch_load(netsnmp_sctp_stats * sctp_stats)
+         if (errno != 0) {
+             DEBUGMSGTL(("sctp:scalars:stats:arch_load",
+                         "Malformed value!'\n"));
++            fclose(f);
+             return -1;
+         }
+ 
+@@ -136,11 +139,13 @@ netsnmp_access_sctp_stats_arch_load(netsnmp_sctp_stats * sctp_stats)
+         if (ret < 0) {
+             DEBUGMSGTL(("sctp:scalars:stats:arch_load",
+                         "Unknown entry!'\n"));
++            fclose(f);
+             return ret;
+         }
+     }
+ 
+     sctp_stats->discontinuity_time = 0;
++    fclose(f);
+     return 0;
+ }
+ 

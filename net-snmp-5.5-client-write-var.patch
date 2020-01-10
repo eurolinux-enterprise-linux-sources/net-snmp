@@ -1,0 +1,99 @@
+1246568 - snmptrap can't create (or write to) /var/lib/net-snmp/snmpapp.conf if isn't run under root
+Backported from:
+
+commit 53ee5f1d240ac90adae935538bdc2ca13a8caa32
+Author: Jan Safranek <jsafranek@users.sourceforge.net>
+Date:   Wed Feb 18 16:29:16 2015 +0100
+
+diff -up net-snmp-5.5/agent/mibgroup/disman/expression/expValueTable.c.test net-snmp-5.5/agent/mibgroup/disman/expression/expValueTable.c
+--- net-snmp-5.5/agent/mibgroup/disman/expression/expValueTable.c.test	2008-12-16 00:25:34.000000000 +0100
++++ net-snmp-5.5/agent/mibgroup/disman/expression/expValueTable.c	2015-11-30 15:55:55.761710925 +0100
+@@ -127,7 +127,7 @@ init_expValueTable(void)
+     REGISTER_MIB("expValueTable",
+                  expValueTable_variables, variable2,
+                  expValueTable_variables_oid);
+-    init_snmp("snmpapp");
++    init_snmp(NETSNMP_APPLICATION_CONFIG_TYPE);
+ 
+     /*
+      * Initialize a "session" that defines who we're going to talk to
+diff -up net-snmp-5.5/apps/snmptranslate.c.test net-snmp-5.5/apps/snmptranslate.c
+--- net-snmp-5.5/apps/snmptranslate.c.test	2015-11-30 15:55:55.762710927 +0100
++++ net-snmp-5.5/apps/snmptranslate.c	2015-11-30 15:56:37.177781947 +0100
+@@ -241,7 +241,7 @@ main(int argc, char *argv[])
+     }
+ 
+     snmp_enable_stderrlog();
+-    init_snmp("snmpapp");
++    init_snmp(NETSNMP_APPLICATION_CONFIG_TYPE);
+     if (optind < argc)
+         current_name = argv[optind];
+ 
+diff -up net-snmp-5.5/apps/snmptrap.c.test net-snmp-5.5/apps/snmptrap.c
+--- net-snmp-5.5/apps/snmptrap.c.test	2015-11-30 15:55:50.635702135 +0100
++++ net-snmp-5.5/apps/snmptrap.c	2015-11-30 15:55:55.763710929 +0100
+@@ -391,7 +391,7 @@ main(int argc, char *argv[])
+         snmp_free_pdu(response);
+ 
+     snmp_close(ss);
+-    snmp_shutdown("snmpapp");
++    snmp_shutdown(NETSNMP_APPLICATION_CONFIG_TYPE);
+     SOCK_CLEANUP;
+     return exitval;
+ }
+diff -up net-snmp-5.5/include/net-snmp/library/read_config.h.test net-snmp-5.5/include/net-snmp/library/read_config.h
+--- net-snmp-5.5/include/net-snmp/library/read_config.h.test	2015-11-30 15:55:50.761702351 +0100
++++ net-snmp-5.5/include/net-snmp/library/read_config.h	2015-11-30 15:55:55.763710929 +0100
+@@ -15,6 +15,12 @@ extern          "C" {
+ #define PREMIB_CONFIG 1
+ #define EITHER_CONFIG 2
+ 
++/*
++ * Value of 'type' parameter of various snmp_config calls,
++ * used by Net-SNMP client utilities.
++ */
++#define NETSNMP_APPLICATION_CONFIG_TYPE "snmpapp"
++
+ #include <net-snmp/config_api.h>
+ 
+     /*
+diff -up net-snmp-5.5/snmplib/read_config.c.test net-snmp-5.5/snmplib/read_config.c
+--- net-snmp-5.5/snmplib/read_config.c.test	2015-11-30 15:55:50.762702353 +0100
++++ net-snmp-5.5/snmplib/read_config.c	2015-11-30 15:55:55.766710934 +0100
+@@ -1515,7 +1515,14 @@ read_config_store(const char *type, cons
+         DEBUGMSGTL(("read_config:store", "storing: %s\n", line));
+         fclose(fout);
+     } else {
+-        snmp_log(LOG_ERR, "read_config_store open failure on %s\n", filep);
++        if (strcmp(NETSNMP_APPLICATION_CONFIG_TYPE, type) != 0) {
++            /*
++             * Ignore this error in client utilities, they can run with random
++             * UID/GID and typically cannot write to /var. Error message just
++             * confuses people.
++             */
++            snmp_log(LOG_ERR, "read_config_store open failure on %s\n", filep);
++        }
+     }
+ #ifdef NETSNMP_PERSISTENT_MASK
+     umask(oldmask);
+diff -up net-snmp-5.5/snmplib/snmp_parse_args.c.test net-snmp-5.5/snmplib/snmp_parse_args.c
+--- net-snmp-5.5/snmplib/snmp_parse_args.c.test	2015-11-30 15:55:50.700702247 +0100
++++ net-snmp-5.5/snmplib/snmp_parse_args.c	2015-11-30 15:55:55.765710932 +0100
+@@ -261,7 +261,7 @@ snmp_parse_args(int argc,
+             break;
+ 
+         case 'H':
+-            init_snmp("snmpapp");
++            init_snmp(NETSNMP_APPLICATION_CONFIG_TYPE);
+             fprintf(stderr, "Configuration directives understood:\n");
+             read_config_print_usage("  ");
+             return (NETSNMP_PARSE_ARGS_SUCCESS_EXIT);
+@@ -615,7 +615,7 @@ snmp_parse_args(int argc,
+     /*
+      * read in MIB database and initialize the snmp library
+      */
+-    init_snmp("snmpapp");
++    init_snmp(NETSNMP_APPLICATION_CONFIG_TYPE);
+ 
+     /*
+      * session default version 

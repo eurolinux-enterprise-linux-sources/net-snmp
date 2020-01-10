@@ -1,0 +1,57 @@
+1235697 - ipSystemStatsInOctets & ipSystemStatsHCInOctets for IPV4 not implemented with net-snmp in RHEL 7 
+
+commit b4caf543cff7dba8f9acca2b9ea88c9b79dc39ee
+Author: Niels Baggesen <nba@users.sourceforge.net>
+Date:   Mon Oct 22 16:32:12 2012 +0200
+
+    Pick up HC octets and McastOctets from /proc/net/netstat of current RHEL6
+    and Fedora kernels.
+
+diff -up net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c.test net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c
+--- net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c.test	2015-11-30 15:19:30.630245909 +0100
++++ net-snmp-5.5/agent/mibgroup/ip-mib/data_access/systemstats_linux.c	2015-11-30 15:19:40.989257593 +0100
+@@ -267,7 +267,7 @@ _additional_systemstats_v4(netsnmp_syste
+     FILE           *devin;
+     char            line[1024];
+     int             scan_count;
+-    unsigned long long scan_vals[6];
++    unsigned long long scan_vals[12];
+     int             retval = 0;
+ 
+     DEBUGMSGTL(("access:systemstats:container:arch",
+@@ -297,9 +297,11 @@ _additional_systemstats_v4(netsnmp_syste
+             memset(scan_vals, 0x0, sizeof(scan_vals));
+             scan_count = sscanf(line,
+                                 "%*s"   /* ignore `IpExt:' */
+-                                "%llu %llu %llu %llu %llu %llu",
++                                "%llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
+                                 &scan_vals[0], &scan_vals[1], &scan_vals[2],
+-                                &scan_vals[3], &scan_vals[4], &scan_vals[5]);
++                                &scan_vals[3], &scan_vals[4], &scan_vals[5],
++                                &scan_vals[6], &scan_vals[7], &scan_vals[8],
++                                &scan_vals[9], &scan_vals[10], &scan_vals[11]);
+             if (scan_count < 6) {
+                 snmp_log(LOG_ERR,
+                         "error scanning addtional systemstats data"
+@@ -327,6 +329,21 @@ _additional_systemstats_v4(netsnmp_syste
+             entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCOUTMCASTPKTS] = 1;
+             entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCINBCASTPKTS] = 1;
+             entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCOUTBCASTPKTS] = 1;
++	    if (scan_count >= 12) {
++		entry->stats.HCInOctets.low        = scan_vals[6] & 0xffffffff;
++		entry->stats.HCInOctets.high       = scan_vals[6] >> 32;
++		entry->stats.HCOutOctets.low       = scan_vals[7] & 0xffffffff;
++		entry->stats.HCOutOctets.high      = scan_vals[7] >> 32;
++		entry->stats.HCInMcastOctets.low   = scan_vals[8] & 0xffffffff;
++		entry->stats.HCInMcastOctets.high  = scan_vals[8] >> 32;
++		entry->stats.HCOutMcastOctets.low  = scan_vals[9] & 0xffffffff;
++		entry->stats.HCOutMcastOctets.high = scan_vals[9] >> 32;
++		/* 10 and 11 are In/OutBcastOctets */
++		entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCINOCTETS] = 1;
++		entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCOUTOCTETS] = 1;
++		entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCINMCASTOCTETS] = 1;
++		entry->stats.columnAvail[IPSYSTEMSTATSTABLE_HCOUTMCASTOCTETS] = 1;
++	    }
+         }
+     }
+ 

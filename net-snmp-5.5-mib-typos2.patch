@@ -1,0 +1,56 @@
+1241865 - NET-SNMP-AGENT-MIB.txt is not loaded successfully due to wrong format
+
+commit 428ec3c7efaf1d7c3eefd636da5a4f91e6ef7faa
+Author: Bart Van Assche <bvassche@users.sourceforge.net>
+Date:   Tue Mar 16 19:31:17 2010 +0000
+
+    Compiles now with MIB compilers that do not recognize a double dash as the end of a MIB comment.
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18321 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/mibs/NET-SNMP-AGENT-MIB.txt b/mibs/NET-SNMP-AGENT-MIB.txt
+index 54d2859..683262c 100644
+--- a/mibs/NET-SNMP-AGENT-MIB.txt
++++ b/mibs/NET-SNMP-AGENT-MIB.txt
+@@ -72,7 +72,7 @@ nsCacheDefaultTimeout         OBJECT-TYPE
+     DESCRIPTION
+       "Default cache timeout value (unless overridden
+        for a particular cache entry)."
+-    DEFVAL { 5 --seconds-- }
++    DEFVAL { 5 } --seconds-- 
+     ::= { nsCache 1 }
+ 
+ nsCacheEnabled                OBJECT-TYPE
+
+commit abd5e11bd44816730033079bfac31e35b5340aa5
+Author: Bart Van Assche <bvassche@users.sourceforge.net>
+Date:   Wed Mar 17 13:37:55 2010 +0000
+
+    Updated MIB revision history.
+    
+    git-svn-id: file:///home/hardaker/lib/sf-bkups/net-snmp-convert-svnrepo/trunk@18325 06827809-a52a-0410-b366-d66718629ded
+
+diff --git a/mibs/NET-SNMP-AGENT-MIB.txt b/mibs/NET-SNMP-AGENT-MIB.txt
+index 683262c..0659881 100644
+--- a/mibs/NET-SNMP-AGENT-MIB.txt
++++ b/mibs/NET-SNMP-AGENT-MIB.txt
+@@ -22,7 +22,7 @@ IMPORTS
+ 
+ 
+ netSnmpAgentMIB MODULE-IDENTITY
+-    LAST-UPDATED "200502070000Z"
++    LAST-UPDATED "201003170000Z"
+     ORGANIZATION "www.net-snmp.org"
+     CONTACT-INFO    
+ 	 "postal:   Wes Hardaker
+@@ -32,6 +32,10 @@ netSnmpAgentMIB MODULE-IDENTITY
+           email:    net-snmp-coders@lists.sourceforge.net"
+     DESCRIPTION
+ 	 "Defines control and monitoring structures for the Net-SNMP agent."
++    REVISION     "201003170000Z"
++    DESCRIPTION
++	 "Made sure that this MIB can be compiled by MIB compilers that do not
++	 recognize a double dash as end-of-comments."
+     REVISION     "200502070000Z"
+     DESCRIPTION
+     	"Fixing syntax errors"
