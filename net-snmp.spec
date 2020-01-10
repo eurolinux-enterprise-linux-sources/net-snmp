@@ -11,7 +11,7 @@
 Summary: A collection of SNMP protocol tools and libraries
 Name: net-snmp
 Version: 5.7.2
-Release: 33%{?dist}.2
+Release: 37%{?dist}
 Epoch: 1
 
 License: BSD
@@ -103,6 +103,9 @@ Patch67: net-snmp-5.7.2-iterator-fix.patch
 Patch68: net-snmp-5.7.2-autofs.patch
 Patch69: net-snmp-5.7.2-leak-backport.patch
 Patch70: net-snmp-5.7.2-acfs.patch
+Patch71: net-snmp-5.7.2-fsync.patch
+Patch72: net-snmp-5.7.2-zfs-support.patch
+Patch73: net-snmp-5.7.2-man-page.patch
 
 Requires(post): chkconfig
 Requires(preun): chkconfig
@@ -326,6 +329,9 @@ The net-snmp-sysvinit package provides SysV init scripts for Net-SNMP daemons.
 %patch68 -p1 -b .autofspatch
 %patch69 -p1 -b .leak-backport
 %patch70 -p1 -b .acfs
+%patch71 -p1 -b .fsync
+%patch72 -p1 -b .zfs-support
+%patch73 -p1 -b .man-page
 
 %ifarch sparc64 s390 s390x
 # disable failing test - see https://bugzilla.redhat.com/show_bug.cgi?id=680697
@@ -621,11 +627,19 @@ rm -rf ${RPM_BUILD_ROOT}
 %{_initrddir}/snmptrapd
 
 %changelog
-* Mon Apr 23 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33.2
-- Add ACFS support (#1570506)
+* Thu Sep 06 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-37
+- fix fsync issue (#1520761)
 
-* Wed Mar 28 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33.1
-- Build for z-stream (#1560965)
+* Tue Aug 14 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-36
+- Add missing part of ACFS support (#1564400)
+
+* Thu Jun 21 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-35
+- Add fsync to prevet data lose on power failure (#1520761)
+- Add ZFS support (#1533943)
+- Fix man page (#1537460)
+
+* Fri Apr 20 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-34
+- Add ACFS support (#1564400)
 
 * Tue Mar 27 2018 Josef Ridky <jridky@redhat.com> - 1:5.7.2-33
 - Backport upstream leak fix (#1533780)
@@ -1892,3 +1906,4 @@ rm -rf ${RPM_BUILD_ROOT}
 
 * Tue Dec 30 1997 Otto Hammersmith <otto@redhat.com>
 - created the package... possibly replace cmu-snmp with this.
+
